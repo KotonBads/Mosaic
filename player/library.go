@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io/fs"
-	"log"
 	"path/filepath"
 	"strings"
 	"time"
@@ -48,7 +47,7 @@ func (lib *Library) Open(path string) error {
 func (lib *Library) Index(path string) error {
 	err := filepath.WalkDir(path, func(filePath string, d fs.DirEntry, err error) error {
 		if err != nil {
-			log.Printf("Could not access path %q: %v", filePath, err)
+			logger.Warn("Could not access path", "path", filePath, "err", err)
 			return nil
 		}
 		if d.IsDir() {
@@ -107,7 +106,7 @@ func (lib *Library) Index(path string) error {
 		`
 		_, err = lib.db.Exec(query, title, string(artistsJSON), album, duration, storedDate, filePath)
 		if err != nil {
-			log.Printf("Could not insert track %q: %v", filePath, err)
+			logger.Warn("Could not insert track", "path", filePath, "err", err)
 		}
 		return nil
 	})

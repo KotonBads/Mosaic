@@ -46,6 +46,10 @@ func ThumbnailFromBytes(data []byte) (*gtk.Picture, error) {
 	return picture, nil
 }
 
+func sanitize_name(name string) string {
+	return strings.ReplaceAll(name, "/", "_")
+}
+
 func read_image_from_tag(track player.Track) ([]byte, error) {
 	img_bytes, err := taglib.ReadImage(track.Path)
 	if err != nil {
@@ -74,22 +78,27 @@ func GetAlbumArt(track player.Track) (*gtk.Picture, error) {
 		return nil, err
 	}
 
-	artists := join_artist_name(track.Artists)
-	art_path := fmt.Sprintf("%s/%s - %s.png", art_dir, artists, track.Album)
+	// sanitize everything
+	// thanks fall out boy
+	artists := sanitize_name(join_artist_name(track.Artists))
+	art_path := fmt.Sprintf("%s/%s - %s.png", art_dir, artists, sanitize_name(track.Album))
 
 	_, err = os.Stat(art_path)
 	if errors.Is(err, os.ErrNotExist) {
 		img_bytes, err := read_image_from_tag(track)
 		if err != nil {
+			logger.Warn("Could not read image from tag", "err", err)
 			return nil, err
 		}
 		picture, err := PictureFromBytes(img_bytes)
 		if err != nil {
+			logger.Warn("Could not create album art", "err", err)
 			return nil, err
 		}
 
 		texture, ok := picture.Paintable().Cast().(gdk.Texturer)
 		if ok {
+			logger.Info("Saving album art", "art_path", art_path)
 			gdk.BaseTexture(texture).SaveToPNG(art_path)
 		}
 
@@ -113,8 +122,8 @@ func GetAlbumThumb(track player.Track) (*gtk.Picture, error) {
 		return nil, err
 	}
 
-	artists := join_artist_name(track.Artists)
-	thumb_path := fmt.Sprintf("%s/%s - %s.png", thumb_dir, artists, track.Album)
+	artists := sanitize_name(join_artist_name(track.Artists))
+	thumb_path := fmt.Sprintf("%s/%s - %s.png", thumb_dir, artists, sanitize_name(track.Album))
 
 	_, err = os.Stat(thumb_path)
 	if errors.Is(err, os.ErrNotExist) {

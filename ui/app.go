@@ -13,6 +13,8 @@ import (
 	_ "embed"
 )
 
+var logger = log.WithPrefix("ui")
+
 func test_queue() []*gtk.ListBoxRow {
 	queue := make([]*gtk.ListBoxRow, 0, 100)
 
@@ -45,7 +47,7 @@ func scrolled_list(items []player.Track, onSelect func(track player.Track)) gtk.
 		}
 	})
 
-	log.Debug("Initialized queue list", "itemCount", len(items))
+	logger.Debug("Initialized queue list", "itemCount", len(items))
 
 	scrolled := gtk.NewScrolledWindow()
 	scrolled.SetPolicy(gtk.PolicyNever, gtk.PolicyAutomatic)
@@ -65,23 +67,23 @@ func App() {
 
 	configDir, err := os.UserConfigDir()
 	if err != nil {
-		log.Fatalf("Failed to get user config dir: %v", err)
+		logger.Error("Failed to get user config dir", "err", err)
 	}
 	library.Open(configDir + "/mosaic/library.db")
 	library.Index("/home/koton-bads/Music/")
 	library.Load()
 
 	app := NewWindow(func(win *gtk.ApplicationWindow) {
-		log.Info("Prefetching album art")
+		logger.Info("Prefetching album art")
 		go func() {
 			for _, track := range library.Tracks {
 				GetAlbumArt(track)
 				GetAlbumThumb(track)
 			}
-			log.Info("Prefetching complete")
+			logger.Info("Prefetching complete")
 		}()
 
-		log.Info("Building main UI layout")
+		logger.Info("Building main UI layout")
 		pane := gtk.NewPaned(gtk.OrientationHorizontal)
 		pane.SetPosition(360)
 		pane.SetResizeStartChild(false)
@@ -107,7 +109,7 @@ func App() {
 		list := scrolled_list(sortedTracks, func(track player.Track) {
 			pic, err := GetAlbumArt(track)
 			if err != nil {
-				log.Warn("Failed to load album art", "track", track.Title, "err", err)
+				logger.Warn("Failed to load album art", "track", track.Title, "err", err)
 				return
 			}
 
@@ -160,9 +162,9 @@ func App() {
 
 	exitCode := app.Run(os.Args)
 	if exitCode != 0 {
-		log.Warn("Application exited with non-zero status", "code", exitCode)
+		logger.Warn("Application exited with non-zero status", "code", exitCode)
 	} else {
-		log.Info("Mosaic shutdown gracefully")
+		logger.Info("Mosaic shutdown gracefully")
 	}
 	os.Exit(exitCode)
 }

@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"github.com/charmbracelet/log"
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
@@ -31,7 +30,7 @@ func NewPaned() *gtk.Paned {
 func NewWindow(onActivate func(win *gtk.ApplicationWindow)) *gtk.Application {
 	app := gtk.NewApplication("com.KotonBads.Mosaic", gio.ApplicationDefaultFlags)
 	app.ConnectActivate(func() {
-		log.Info("Activating GTK application window", "appID", "com.KotonBads.Mosaic")
+		logger.Info("Activating GTK application window", "appID", "com.KotonBads.Mosaic")
 
 		load_css()
 		win := gtk.NewApplicationWindow(app)
@@ -41,7 +40,7 @@ func NewWindow(onActivate func(win *gtk.ApplicationWindow)) *gtk.Application {
 		onActivate(win)
 
 		win.Present()
-		log.Debug("Main application window presented")
+		logger.Debug("Main application window presented")
 	})
 	return app
 }

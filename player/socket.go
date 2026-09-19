@@ -13,9 +13,11 @@ import (
 	coreglib "github.com/diamondburned/gotk4/pkg/core/glib"
 )
 
+var logger = log.WithPrefix("player")
+
 // StartMPV launches an isolated mpv process with an IPC socket server
 func StartMPV(socketPath string) (*Client, error) {
-	log.Debug("Preparing MPV socket", "socketPath", socketPath)
+	logger.Debug("Preparing MPV socket", "socketPath", socketPath)
 	_ = os.Remove(socketPath)
 
 	cmd := exec.Command("mpv",
@@ -30,7 +32,7 @@ func StartMPV(socketPath string) (*Client, error) {
 	)
 
 	if err := cmd.Start(); err != nil {
-		log.Error("Failed to spawn mpv process", "err", err)
+		logger.Error("Failed to spawn mpv process", "err", err)
 		return nil, fmt.Errorf("failed to start mpv: %w", err)
 	}
 
@@ -44,7 +46,7 @@ func StartMPV(socketPath string) (*Client, error) {
 		time.Sleep(50 * time.Millisecond)
 	}
 	if err != nil {
-		log.Error("Cannot connect to mpv socket", "socketPath", socketPath, "err", err)
+		logger.Error("Cannot connect to mpv socket", "socketPath", socketPath, "err", err)
 		return nil, fmt.Errorf("cannot connect to mpv socket: %w", err)
 	}
 
@@ -54,7 +56,7 @@ func StartMPV(socketPath string) (*Client, error) {
 		socketPath: socketPath,
 	}
 
-	log.Info("Connected to MPV IPC socket", "socketPath", socketPath)
+	logger.Info("Connected to MPV IPC socket", "socketPath", socketPath)
 
 	go client.listenLoop()
 
@@ -80,33 +82,33 @@ func (c *Client) SendCommand(args ...interface{}) error {
 	data = append(data, '\n')
 	_, err = c.conn.Write(data)
 	if err != nil {
-		log.Error("Failed writing command to mpv", "err", err, "args", args)
+		logger.Error("Failed writing command to mpv", "err", err, "args", args)
 	}
 	return err
 }
 
 func (c *Client) PlayFile(path string) error {
-	log.Info("Playing track", "path", path)
+	logger.Info("Playing track", "path", path)
 	return c.SendCommand("loadfile", path, "replace")
 }
 
 func (c *Client) TogglePause() error {
-	log.Debug("Toggling playback pause")
+	logger.Debug("Toggling playback pause")
 	return c.SendCommand("cycle", "pause")
 }
 
 func (c *Client) Seek(seconds float64) error {
-	log.Debug("Seeking track", "seconds", seconds)
+	logger.Debug("Seeking track", "seconds", seconds)
 	return c.SendCommand("seek", seconds, "absolute")
 }
 
 func (c *Client) SetVolume(volume float64) error {
-	log.Debug("Setting volume", "volume", volume)
+	logger.Debug("Setting volume", "volume", volume)
 	return c.SendCommand("set_property", "volume", volume)
 }
 
 func (c *Client) ObserveProperty(id int, name string) error {
-	log.Debug("Subscribing to mpv property", "id", id, "property", name)
+	logger.Debug("Subscribing to mpv property", "id", id, "property", name)
 	return c.SendCommand("observe_property", id, name)
 }
 
@@ -114,7 +116,7 @@ func (c *Client) listenLoop() {
 	for {
 		line, err := c.reader.ReadBytes('\n')
 		if err != nil {
-			log.Warn("MPV socket connection closed", "err", err)
+			logger.Warn("MPV socket connection closed", "err", err)
 			return
 		}
 
@@ -137,14 +139,14 @@ func (c *Client) listenLoop() {
 				}
 			case "pause":
 				if paused, ok := event.Data.(bool); ok && c.OnPause != nil {
-					log.Debug("Playback pause state changed", "paused", paused)
+					logger.Debug("Playback pause state changed", "paused", paused)
 					coreglib.IdleAdd(func() {
 						c.OnPause(paused)
 					})
 				}
 			}
 		} else if event.Event == "end-file" && c.OnTrackEnd != nil {
-			log.Info("Track finished playing")
+			logger.Info("Track finished playing")
 			coreglib.IdleAdd(func() {
 				c.OnTrackEnd()
 			})
@@ -154,7 +156,7 @@ func (c *Client) listenLoop() {
 
 // Close gracefully closes the socket connection and cleans up
 func (c *Client) Close() {
-	log.Info("Shutting down MPV client")
+	logger.Info("Shutting down MPV client")
 	_ = c.SendCommand("quit")
 	if c.conn != nil {
 		_ = c.conn.Close()

@@ -1,7 +1,6 @@
 package ui
 
 import (
-	"log"
 	"strings"
 
 	"github.com/KotonBads/mosaic/player"
@@ -39,7 +38,7 @@ func QueueElement(track player.Track) gtk.Widgetter {
 
 	picture, err := GetAlbumThumb(track)
 	if err != nil {
-		log.Println(err)
+		logger.Warn("Failed to load album thumbnail", "track", track.Title, "err", err)
 	}
 
 	picture.SetSizeRequest(42, 42)
