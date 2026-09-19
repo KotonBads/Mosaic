@@ -1,0 +1,144 @@
+package ui
+
+import (
+	"errors"
+	"fmt"
+	"os"
+	"strings"
+
+	"context"
+
+	"github.com/KotonBads/mosaic/player"
+	"github.com/diamondburned/gotk4/pkg/gdk/v4"
+	"github.com/diamondburned/gotk4/pkg/gdkpixbuf/v2"
+	"github.com/diamondburned/gotk4/pkg/gio/v2"
+	"github.com/diamondburned/gotk4/pkg/glib/v2"
+	"github.com/diamondburned/gotk4/pkg/gtk/v4"
+	"go.senan.xyz/taglib"
+)
+
+func PictureFromBytes(data []byte) (*gtk.Picture, error) {
+	tex, err := gdk.NewTextureFromBytes(glib.NewBytes(data))
+	if err != nil {
+		return nil, err
+	}
+
+	picture := gtk.NewPictureForPaintable(tex)
+	picture.SetCanShrink(true)
+	return picture, nil
+}
+
+func ThumbnailFromBytes(data []byte) (*gtk.Picture, error) {
+	pixbuf, err := gdkpixbuf.NewPixbufFromStreamAtScale(
+		context.Background(),
+		gio.NewMemoryInputStreamFromBytes(glib.NewBytes(data)),
+		42,
+		42,
+		true,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	tex := gdk.NewTextureForPixbuf(pixbuf)
+	picture := gtk.NewPictureForPaintable(tex)
+	picture.SetCanShrink(true)
+	return picture, nil
+}
+
+func read_image_from_tag(track player.Track) ([]byte, error) {
+	img_bytes, err := taglib.ReadImage(track.Path)
+	if err != nil {
+		return nil, err
+	}
+	return img_bytes, nil
+}
+
+func join_artist_name(artists []player.Artist) string {
+	names := make([]string, 0, len(artists))
+	for _, artist := range artists {
+		names = append(names, artist.Name)
+	}
+	return strings.Join(names, ", ")
+}
+
+func GetAlbumArt(track player.Track) (*gtk.Picture, error) {
+	cache_dir, err := os.UserCacheDir()
+	if err != nil {
+		return nil, err
+	}
+
+	art_dir := cache_dir + "/mosaic/art"
+	err = os.MkdirAll(art_dir, 0755)
+	if err != nil {
+		return nil, err
+	}
+
+	artists := join_artist_name(track.Artists)
+	art_path := fmt.Sprintf("%s/%s - %s.png", art_dir, artists, track.Album)
+
+	_, err = os.Stat(art_path)
+	if errors.Is(err, os.ErrNotExist) {
+		img_bytes, err := read_image_from_tag(track)
+		if err != nil {
+			return nil, err
+		}
+		picture, err := PictureFromBytes(img_bytes)
+		if err != nil {
+			return nil, err
+		}
+
+		texture, ok := picture.Paintable().Cast().(gdk.Texturer)
+		if ok {
+			gdk.BaseTexture(texture).SaveToPNG(art_path)
+		}
+
+		return picture, nil
+	}
+
+	picture := gtk.NewPictureForFilename(art_path)
+	picture.SetCanShrink(true)
+	return picture, nil
+}
+
+func GetAlbumThumb(track player.Track) (*gtk.Picture, error) {
+	cache_dir, err := os.UserCacheDir()
+	if err != nil {
+		return nil, err
+	}
+
+	thumb_dir := cache_dir + "/mosaic/thumb"
+	err = os.MkdirAll(thumb_dir, 0755)
+	if err != nil {
+		return nil, err
+	}
+
+	artists := join_artist_name(track.Artists)
+	thumb_path := fmt.Sprintf("%s/%s - %s.png", thumb_dir, artists, track.Album)
+
+	_, err = os.Stat(thumb_path)
+	if errors.Is(err, os.ErrNotExist) {
+		img_bytes, err := read_image_from_tag(track)
+		if err != nil {
+			return nil, err
+		}
+		picture, err := ThumbnailFromBytes(img_bytes)
+		if err != nil {
+			return nil, err
+		}
+
+		texture, ok := picture.Paintable().Cast().(gdk.Texturer)
+		if ok {
+			gdk.BaseTexture(texture).SaveToPNG(thumb_path)
+		}
+
+		return picture, nil
+	}
+
+	// trust that the cached thumbnails are already to scale
+	// if they're not, well it's in cache so it will be refreshed
+	// at some point
+	picture := gtk.NewPictureForFilename(thumb_path)
+	picture.SetCanShrink(true)
+	return picture, nil
+}

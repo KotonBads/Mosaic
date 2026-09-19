@@ -1,0 +1,28 @@
+aspectframe {
+    border: none;
+    padding: 0;
+}
+
+frame.thumb-art {
+    border-radius: 8px;
+    border: none;
+    padding: 0;
+}
+
+frame.album-art {
+    border-radius: 16px;
+    border: none;
+    padding: 0;
+}
+
+.thumb-art {
+    border-radius: 8px;
+}
+
+.album-art {
+    border-radius: 16px;
+}
+
+.queue-item {
+    border-radius: 12px;
+}
