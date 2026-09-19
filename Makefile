@@ -3,8 +3,8 @@
 
 CC       := zig cc
 CXX      := zig c++
-BIN_APP  := mosaic
-BIN_LIB  := widget-library
+BIN_APP  := build/mosaic
+BIN_LIB  := build/widget-library
 
 .PHONY: all build run gallery list clean help
 
