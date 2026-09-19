@@ -21,8 +21,62 @@ func AlbumArt(track player.Track) (*gtk.Picture, error) {
 	return picture, nil
 }
 
-func PlayerControls() gtk.Widgetter {
+func PlayerControls(p *player.Player) gtk.Widgetter {
 	box := gtk.NewBox(gtk.OrientationHorizontal, 12)
+
+	play_pause := gtk.NewButtonFromIconName("media-playback-pause-symbolic")
+	previous := gtk.NewButtonFromIconName("media-skip-backward-symbolic")
+	next := gtk.NewButtonFromIconName("media-skip-forward-symbolic")
+	shuffle := gtk.NewButtonFromIconName("media-playlist-shuffle-symbolic")
+	repeat := gtk.NewButtonFromIconName("media-playlist-repeat-symbolic")
+
+	box.Append(shuffle)
+	box.Append(previous)
+	box.Append(play_pause)
+	box.Append(next)
+	box.Append(repeat)
+
+	refresh := func() {
+		if p == nil {
+			return
+		}
+		if p.Paused {
+			play_pause.SetIconName("media-playback-start-symbolic")
+		} else {
+			play_pause.SetIconName("media-playback-pause-symbolic")
+		}
+
+		if p.Shuffle {
+			shuffle.SetIconName("media-playlist-shuffle-symbolic")
+			shuffle.RemoveCSSClass("dim-label")
+		} else {
+			shuffle.SetIconName("media-playlist-shuffle-symbolic")
+			shuffle.AddCSSClass("dim-label")
+		}
+
+		if p.Repeat == player.RepeatOne {
+			repeat.SetIconName("media-playlist-repeat-song-symbolic")
+			repeat.RemoveCSSClass("dim-label")
+		} else if p.Repeat == player.RepeatQueue {
+			repeat.SetIconName("media-playlist-repeat-symbolic")
+			repeat.RemoveCSSClass("dim-label")
+		} else {
+			repeat.SetIconName("media-playlist-repeat-symbolic")
+			repeat.AddCSSClass("dim-label")
+		}
+	}
+
+	if p != nil {
+		play_pause.ConnectClicked(p.PlayPause)
+		repeat.ConnectClicked(p.SetRepeat)
+		shuffle.ConnectClicked(p.SetShuffle)
+		next.ConnectClicked(p.Next)
+		previous.ConnectClicked(p.Prev)
+
+		p.OnChange = refresh
+	}
+
+	refresh()
 
 	return box
 }

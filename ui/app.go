@@ -73,6 +73,8 @@ func App() {
 	library.Index("/home/koton-bads/Music/")
 	library.Load()
 
+	library.Player = &player.Player{}
+
 	app := NewWindow(func(win *gtk.ApplicationWindow) {
 		logger.Info("Prefetching album art")
 		go func() {
@@ -86,8 +88,8 @@ func App() {
 		logger.Info("Building main UI layout")
 		pane := gtk.NewPaned(gtk.OrientationHorizontal)
 		pane.SetPosition(360)
-		pane.SetResizeStartChild(false)
-		pane.SetResizeEndChild(true)
+		pane.SetResizeStartChild(true)
+		pane.SetResizeEndChild(false)
 
 		// Initial right pane placeholder
 		placeholder := gtk.NewBox(gtk.OrientationVertical, 8)
@@ -146,6 +148,8 @@ func App() {
 			detailBox.Append(af)
 			detailBox.Append(titleLabel)
 			detailBox.Append(artistLabel)
+
+			detailBox.Append(PlayerControls(library.Player))
 
 			pane.SetEndChild(detailBox)
 		})

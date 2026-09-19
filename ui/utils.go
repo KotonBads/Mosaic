@@ -98,7 +98,7 @@ func GetAlbumArt(track player.Track) (*gtk.Picture, error) {
 
 		texture, ok := picture.Paintable().Cast().(gdk.Texturer)
 		if ok {
-			logger.Info("Saving album art", "art_path", art_path)
+			logger.Debug("Saving album art", "art_path", art_path)
 			gdk.BaseTexture(texture).SaveToPNG(art_path)
 		}
 
