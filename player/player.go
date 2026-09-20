@@ -7,8 +7,8 @@ import (
 )
 
 func (p *Player) notify() {
-	if p.OnChange != nil {
-		glib.IdleAdd(p.OnChange)
+	if p.ControlChange != nil {
+		glib.IdleAdd(p.ControlChange)
 	}
 }
 
@@ -36,7 +36,7 @@ func (p *Player) SetShuffle() {
 		p.SortAlphabetically()
 	}
 	p.notify()
-	p.OnTrackChange(p.CurrentIdx)
+	p.QueueChange()
 }
 
 func (p *Player) PlayTrack(idx int) {
@@ -44,6 +44,7 @@ func (p *Player) PlayTrack(idx int) {
 		return
 	}
 	logger.Debug("Play track", "index", idx, "title", p.Queue[idx].Title)
+	track := p.Queue[idx]
 	p.CurrentIdx = idx
 	p.Pos = 0
 	if p.MPV != nil {
@@ -51,12 +52,7 @@ func (p *Player) PlayTrack(idx int) {
 	}
 	p.notify()
 	if p.OnTrackChange != nil {
-		trackIdx := idx
-		glib.IdleAdd(func() {
-			if p.OnTrackChange != nil {
-				p.OnTrackChange(trackIdx)
-			}
-		})
+		glib.IdleAdd(func() { p.OnTrackChange(track) })
 	}
 }
 
@@ -66,7 +62,11 @@ func (p *Player) Next() {
 		return
 	}
 	nextIdx := (p.CurrentIdx + 1) % len(p.Queue)
+	track := p.Queue[nextIdx]
 	p.PlayTrack(nextIdx)
+	if p.OnTrackChange != nil {
+		glib.IdleAdd(func() { p.OnTrackChange(track) })
+	}
 }
 
 func (p *Player) Prev() {
@@ -75,7 +75,11 @@ func (p *Player) Prev() {
 		return
 	}
 	prevIdx := (p.CurrentIdx - 1 + len(p.Queue)) % len(p.Queue)
+	track := p.Queue[prevIdx]
 	p.PlayTrack(prevIdx)
+	if p.OnTrackChange != nil {
+		glib.IdleAdd(func() { p.OnTrackChange(track) })
+	}
 }
 
 func (p *Player) Seek(t time.Duration) {

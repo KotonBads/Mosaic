@@ -67,6 +67,7 @@ type Player struct {
 	Repeat        RepeatMode
 	Volume        int
 	MPV           *Client
-	OnChange      func()
-	OnTrackChange func(idx int)
+	ControlChange func()
+	QueueChange   func()
+	OnTrackChange func(Track)
 }

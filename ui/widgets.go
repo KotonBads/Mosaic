@@ -23,7 +23,8 @@ func AlbumArt(track player.Track) (*gtk.Picture, error) {
 }
 
 func PlayerControls(p *player.Player) gtk.Widgetter {
-	box := gtk.NewBox(gtk.OrientationHorizontal, 12)
+	controls_box := gtk.NewBox(gtk.OrientationHorizontal, 12)
+	final_box := gtk.NewBox(gtk.OrientationVertical, 4)
 
 	play_pause := gtk.NewButtonFromIconName("media-playback-pause-symbolic")
 	previous := gtk.NewButtonFromIconName("media-skip-backward-symbolic")
@@ -32,15 +33,17 @@ func PlayerControls(p *player.Player) gtk.Widgetter {
 	repeat := gtk.NewButtonFromIconName("media-playlist-repeat-symbolic")
 	seek_bar := gtk.NewScaleWithRange(gtk.OrientationHorizontal, 0, 100, 1)
 
+	controls_box.SetHAlign(gtk.AlignCenter)
 	seek_bar.SetHExpand(true)
 	seek_bar.SetDrawValue(false)
 
-	box.Append(shuffle)
-	box.Append(previous)
-	box.Append(play_pause)
-	box.Append(next)
-	box.Append(repeat)
-	box.Append(seek_bar)
+	controls_box.Append(shuffle)
+	controls_box.Append(previous)
+	controls_box.Append(play_pause)
+	controls_box.Append(next)
+	controls_box.Append(repeat)
+	final_box.Append(seek_bar)
+	final_box.Append(controls_box)
 
 	var updatingUI bool
 
@@ -102,12 +105,12 @@ func PlayerControls(p *player.Player) gtk.Widgetter {
 			p.Seek(time.Duration(ratio * float64(track.Duration)))
 		})
 
-		p.OnChange = refresh
+		p.ControlChange = refresh
 	}
 
 	refresh()
 
-	return box
+	return final_box
 }
 
 func QueueElement(track player.Track) gtk.Widgetter {
@@ -165,8 +168,29 @@ func QueueElement(track player.Track) gtk.Widgetter {
 	return box
 }
 
-func Queue(p player.Player) gtk.Widgetter {
-	
-	
-	return nil
+func Queue(p player.Player, onChange func(track player.Track)) gtk.Widgetter {
+	var list *gtk.ListBox
+
+	refresh := func() {
+		l := gtk.NewListBox()
+		for _, track := range p.Queue {
+			l.Append(QueueElement(track))
+		}
+
+		list = l
+	}
+
+	p.QueueChange = refresh
+	refresh()
+
+	list.ConnectRowActivated(func(row *gtk.ListBoxRow) {
+		idx := row.Index()
+		p.CurrentIdx = idx
+		onChange(p.Queue[idx])
+		p.PlayTrack(idx)
+	})
+
+	scrollable := gtk.NewScrolledWindow()
+	scrollable.SetChild(list)
+	return scrollable
 }

@@ -88,161 +88,224 @@ func App() {
 
 		logger.Info("Building Libadwaita OverlaySplitView responsive layout")
 
-		// Detail container holding either the placeholder or track details
-		detailContainer := gtk.NewBox(gtk.OrientationVertical, 0)
-		detailContainer.SetHExpand(true)
-		detailContainer.SetVExpand(true)
+		split_view := adw.NewOverlaySplitView()
+		split_view.SetHExpand(true)
+		split_view.SetVExpand(true)
+		split_view.SetMinSidebarWidth(260)
+		split_view.SetMaxSidebarWidth(450)
+		split_view.SetSidebarWidthFraction(0.35)
 
-		setDetail := func(w gtk.Widgetter) {
-			for child := detailContainer.FirstChild(); child != nil; {
-				next := gtk.BaseWidget(child).NextSibling()
-				detailContainer.Remove(child)
-				child = next
-			}
-			if w != nil {
-				detailContainer.Append(w)
-			}
-		}
+		player_refresh := func(track player.Track) {
+			player_area := gtk.NewBox(gtk.OrientationVertical, 40)
+			player_area.SetVAlign(gtk.AlignCenter)
 
-		// Initial right pane placeholder
-		placeholder := gtk.NewBox(gtk.OrientationVertical, 8)
-		placeholder.SetHExpand(true)
-		placeholder.SetVExpand(true)
-		placeholder.SetHAlign(gtk.AlignCenter)
-		placeholder.SetVAlign(gtk.AlignCenter)
+			album_art := gtk.NewAspectFrame(0.5, 0.5, 1.0, false)
+			album_art.SetOverflow(gtk.OverflowHidden)
+			album_art.AddCSSClass("album-art")
+			album_art.SetSizeRequest(120, 120)
 
-		lblPrompt := gtk.NewLabel("Select a track from the queue to view album art")
-		lblPrompt.AddCSSClass("dim-label")
-		placeholder.Append(lblPrompt)
-
-		setDetail(placeholder)
-
-		// Overlay split view setup
-		splitView := adw.NewOverlaySplitView()
-		splitView.SetSidebarWidthFraction(0.32)
-		splitView.SetMinSidebarWidth(260)
-		splitView.SetMaxSidebarWidth(420)
-		splitView.SetEnableShowGesture(true)
-		splitView.SetEnableHideGesture(true)
-
-		// Header Bar toggle button for small screens / collapsed mode
-		toggleQueueBtn := gtk.NewButtonFromIconName("view-list-symbolic")
-		toggleQueueBtn.SetTooltipText("Toggle Queue")
-		toggleQueueBtn.SetVisible(false)
-
-		toggleQueueBtn.ConnectClicked(func() {
-			splitView.SetShowSidebar(!splitView.ShowSidebar())
-		})
-
-		var (
-			sidebarList *gtk.ListBox
-			showTrack   func(idx int)
-		)
-
-		showTrack = func(idx int) {
-			if idx < 0 || idx >= len(library.Player.Queue) {
-				return
-			}
-
-			// Highlight the track row in the sidebar
-			if sidebarList != nil {
-				if row := sidebarList.RowAtIndex(idx); row != nil {
-					sidebarList.SelectRow(row)
-				}
-			}
-
-			track := library.Player.Queue[idx]
-
-			pic, err := GetAlbumArt(track)
+			picture, err := AlbumArt(track)
 			if err != nil {
-				logger.Warn("Failed to load album art", "track", track.Title, "err", err)
 				return
 			}
+			album_art.SetChild(picture)
 
-			pic.SetCanShrink(true)
-			pic.SetContentFit(gtk.ContentFitCover)
+			album_clamped := adw.NewClamp()
+			album_clamped.SetChild(album_art)
+			album_clamped.SetMaximumSize(320)
+			player_area.Append(album_clamped)
 
-			frame := gtk.NewFrame("")
-			frame.AddCSSClass("album-art")
-			frame.SetOverflow(gtk.OverflowHidden)
-			frame.SetChild(pic)
+			song_info := gtk.NewBox(gtk.OrientationVertical, 0)
+			song_info.SetHExpand(true)
+			song_info.SetVExpand(true)
+			song_info.SetHAlign(gtk.AlignCenter)
 
-			af := gtk.NewAspectFrame(0.5, 0.5, 1.0, false)
-			af.SetHExpand(true)
-			af.SetVExpand(true)
-			af.SetChild(frame)
+			song_title := gtk.NewLabel(track.Title)
+			song_title.AddCSSClass("title-4")
+			song_info.Append(song_title)
 
-			detailBox := gtk.NewBox(gtk.OrientationVertical, 14)
-			detailBox.SetHExpand(true)
-			detailBox.SetVExpand(true)
-			detailBox.SetMarginTop(24)
-			detailBox.SetMarginBottom(24)
-			detailBox.SetMarginStart(24)
-			detailBox.SetMarginEnd(24)
+			song_artist := gtk.NewLabel(track.Artists[0].Name)
+			song_artist.AddCSSClass("body")
+			song_artist.AddCSSClass("dim-label")
+			song_info.Append(song_artist)
 
-			titleLabel := gtk.NewLabel(track.Title)
-			titleLabel.AddCSSClass("title-1")
-			titleLabel.SetHAlign(gtk.AlignCenter)
+			player_area.Append(song_info)
 
-			artistLabel := gtk.NewLabel(join_artist_name(track.Artists))
-			artistLabel.AddCSSClass("dim-label")
-			artistLabel.AddCSSClass("title-4")
-			artistLabel.SetHAlign(gtk.AlignCenter)
+			controls := PlayerControls(library.Player)
+			controls_clamped := adw.NewClamp()
+			controls_clamped.SetChild(controls)
+			controls_clamped.SetMaximumSize(420)
+			player_area.Append(controls_clamped)
 
-			detailBox.Append(af)
-			detailBox.Append(titleLabel)
-			detailBox.Append(artistLabel)
-			detailBox.Append(PlayerControls(library.Player))
-
-			setDetail(detailBox)
+			split_view.SetContent(player_area)
 		}
 
-		// When track changes via Next/Prev/click, propagate to UI
-		library.Player.OnTrackChange = func(idx int) {
-			showTrack(idx)
+		queue_refresh := func() {
+			queue := Queue(*library.Player, player_refresh)
+			split_view.SetSidebar(queue)
 		}
 
-		list, listWidget := scrolled_list(library.Player, func(idx int) {
-			// When collapsed, auto-hide drawer after track selection to focus on player
-			if splitView.Collapsed() {
-				splitView.SetShowSidebar(false)
-			}
-		})
-		sidebarList = list
+		queue_refresh()
 
-		queueBox := gtk.NewBox(gtk.OrientationVertical, 0)
-		queueBox.SetVExpand(true)
-		queueBox.SetHExpand(true)
-		queueBox.AddCSSClass("background")
-		queueBox.Append(listWidget)
+		library.Player.QueueChange = queue_refresh
+		library.Player.OnTrackChange = player_refresh
 
-		splitView.SetSidebar(queueBox)
-		splitView.SetContent(detailContainer)
-
-		// Responsive Libadwaita Breakpoint (<= 760px)
-		bp := adw.NewBreakpoint(adw.BreakpointConditionParse("max-width: 760px"))
-		bp.ConnectApply(func() {
-			logger.Debug("Applying narrow breakpoint: collapsing split view")
-			splitView.SetCollapsed(true)
-			toggleQueueBtn.SetVisible(true)
-		})
-		bp.ConnectUnapply(func() {
-			logger.Debug("Unapplying narrow breakpoint: uncollapsing split view")
-			splitView.SetCollapsed(false)
-			toggleQueueBtn.SetVisible(false)
-		})
-
-		win.AddBreakpoint(bp)
-
-		// Adwaita ToolbarView and HeaderBar
-		headerBar := adw.NewHeaderBar()
-		headerBar.PackStart(toggleQueueBtn)
-
-		toolbar := adw.NewToolbarView()
-		toolbar.AddTopBar(headerBar)
-		toolbar.SetContent(splitView)
-
-		win.SetContent(toolbar)
+		win.SetContent(split_view)
+		// 		// Detail container holding either the placeholder or track details
+		// 		detailContainer := gtk.NewBox(gtk.OrientationVertical, 0)
+		// 		detailContainer.SetHExpand(true)
+		// 		detailContainer.SetVExpand(true)
+		//
+		// 		setDetail := func(w gtk.Widgetter) {
+		// 			for child := detailContainer.FirstChild(); child != nil; {
+		// 				next := gtk.BaseWidget(child).NextSibling()
+		// 				detailContainer.Remove(child)
+		// 				child = next
+		// 			}
+		// 			if w != nil {
+		// 				detailContainer.Append(w)
+		// 			}
+		// 		}
+		//
+		// 		// Initial right pane placeholder
+		// 		placeholder := gtk.NewBox(gtk.OrientationVertical, 8)
+		// 		placeholder.SetHExpand(true)
+		// 		placeholder.SetVExpand(true)
+		// 		placeholder.SetHAlign(gtk.AlignCenter)
+		// 		placeholder.SetVAlign(gtk.AlignCenter)
+		//
+		// 		lblPrompt := gtk.NewLabel("Select a track from the queue to view album art")
+		// 		lblPrompt.AddCSSClass("dim-label")
+		// 		placeholder.Append(lblPrompt)
+		//
+		// 		setDetail(placeholder)
+		//
+		// 		// Overlay split view setup
+		// 		splitView := adw.NewOverlaySplitView()
+		// 		splitView.SetSidebarWidthFraction(0.32)
+		// 		splitView.SetMinSidebarWidth(260)
+		// 		splitView.SetMaxSidebarWidth(420)
+		// 		splitView.SetEnableShowGesture(true)
+		// 		splitView.SetEnableHideGesture(true)
+		//
+		// 		// Header Bar toggle button for small screens / collapsed mode
+		// 		toggleQueueBtn := gtk.NewButtonFromIconName("view-list-symbolic")
+		// 		toggleQueueBtn.SetTooltipText("Toggle Queue")
+		// 		toggleQueueBtn.SetVisible(false)
+		//
+		// 		toggleQueueBtn.ConnectClicked(func() {
+		// 			splitView.SetShowSidebar(!splitView.ShowSidebar())
+		// 		})
+		//
+		// 		var (
+		// 			sidebarList *gtk.ListBox
+		// 			showTrack   func(idx int)
+		// 		)
+		//
+		// 		showTrack = func(idx int) {
+		// 			if idx < 0 || idx >= len(library.Player.Queue) {
+		// 				return
+		// 			}
+		//
+		// 			// Highlight the track row in the sidebar
+		// 			if sidebarList != nil {
+		// 				if row := sidebarList.RowAtIndex(idx); row != nil {
+		// 					sidebarList.SelectRow(row)
+		// 				}
+		// 			}
+		//
+		// 			track := library.Player.Queue[idx]
+		//
+		// 			pic, err := GetAlbumArt(track)
+		// 			if err != nil {
+		// 				logger.Warn("Failed to load album art", "track", track.Title, "err", err)
+		// 				return
+		// 			}
+		//
+		// 			pic.SetCanShrink(true)
+		// 			pic.SetContentFit(gtk.ContentFitCover)
+		//
+		// 			frame := gtk.NewFrame("")
+		// 			frame.AddCSSClass("album-art")
+		// 			frame.SetOverflow(gtk.OverflowHidden)
+		// 			frame.SetChild(pic)
+		//
+		// 			af := gtk.NewAspectFrame(0.5, 0.5, 1.0, false)
+		// 			af.SetHExpand(true)
+		// 			af.SetVExpand(true)
+		// 			af.SetChild(frame)
+		//
+		// 			detailBox := gtk.NewBox(gtk.OrientationVertical, 14)
+		// 			detailBox.SetHExpand(true)
+		// 			detailBox.SetVExpand(true)
+		// 			detailBox.SetMarginTop(24)
+		// 			detailBox.SetMarginBottom(24)
+		// 			detailBox.SetMarginStart(24)
+		// 			detailBox.SetMarginEnd(24)
+		//
+		// 			titleLabel := gtk.NewLabel(track.Title)
+		// 			titleLabel.AddCSSClass("title-1")
+		// 			titleLabel.SetHAlign(gtk.AlignCenter)
+		//
+		// 			artistLabel := gtk.NewLabel(join_artist_name(track.Artists))
+		// 			artistLabel.AddCSSClass("dim-label")
+		// 			artistLabel.AddCSSClass("title-4")
+		// 			artistLabel.SetHAlign(gtk.AlignCenter)
+		//
+		// 			detailBox.Append(af)
+		// 			detailBox.Append(titleLabel)
+		// 			detailBox.Append(artistLabel)
+		// 			detailBox.Append(PlayerControls(library.Player))
+		//
+		// 			setDetail(detailBox)
+		// 		}
+		//
+		// 		// When track changes via Next/Prev/click, propagate to UI
+		// 		library.Player.OnTrackChange = func(idx int) {
+		// 			showTrack(idx)
+		// 		}
+		//
+		// 		list, listWidget := scrolled_list(library.Player, func(idx int) {
+		// 			// When collapsed, auto-hide drawer after track selection to focus on player
+		// 			if splitView.Collapsed() {
+		// 				splitView.SetShowSidebar(false)
+		// 			}
+		// 		})
+		// 		sidebarList = list
+		//
+		// 		queueBox := gtk.NewBox(gtk.OrientationVertical, 0)
+		// 		queueBox.SetVExpand(true)
+		// 		queueBox.SetHExpand(true)
+		// 		queueBox.AddCSSClass("background")
+		// 		queueBox.Append(listWidget)
+		//
+		// 		splitView.SetSidebar(queueBox)
+		// 		splitView.SetContent(detailContainer)
+		//
+		// 		// Responsive Libadwaita Breakpoint (<= 760px)
+		// 		bp := adw.NewBreakpoint(adw.BreakpointConditionParse("max-width: 760px"))
+		// 		bp.ConnectApply(func() {
+		// 			logger.Debug("Applying narrow breakpoint: collapsing split view")
+		// 			splitView.SetCollapsed(true)
+		// 			toggleQueueBtn.SetVisible(true)
+		// 		})
+		// 		bp.ConnectUnapply(func() {
+		// 			logger.Debug("Unapplying narrow breakpoint: uncollapsing split view")
+		// 			splitView.SetCollapsed(false)
+		// 			toggleQueueBtn.SetVisible(false)
+		// 		})
+		//
+		// 		win.AddBreakpoint(bp)
+		//
+		// 		// Adwaita ToolbarView and HeaderBar
+		// 		headerBar := adw.NewHeaderBar()
+		// 		headerBar.PackStart(toggleQueueBtn)
+		//
+		// 		toolbar := adw.NewToolbarView()
+		// 		toolbar.AddTopBar(headerBar)
+		// 		toolbar.SetContent(splitView)
+		//
+		// 		win.SetContent(toolbar)
 	})
 
 	exitCode := app.Run(os.Args)
