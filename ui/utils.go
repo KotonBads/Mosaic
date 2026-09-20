@@ -43,11 +43,8 @@ func ThumbnailFromBytes(data []byte) (*gtk.Picture, error) {
 	tex := gdk.NewTextureForPixbuf(pixbuf)
 	picture := gtk.NewPictureForPaintable(tex)
 	picture.SetCanShrink(true)
+	picture.SetContentFit(gtk.ContentFitContain)
 	return picture, nil
-}
-
-func sanitize_name(name string) string {
-	return strings.ReplaceAll(name, "/", "_")
 }
 
 func read_image_from_tag(track player.Track) ([]byte, error) {
@@ -64,6 +61,10 @@ func join_artist_name(artists []player.Artist) string {
 		names = append(names, artist.Name)
 	}
 	return strings.Join(names, ", ")
+}
+
+func sanitize_name(name string) string {
+	return strings.TrimSpace(strings.ReplaceAll(name, "/", "_"))
 }
 
 func GetAlbumArt(track player.Track) (*gtk.Picture, error) {
@@ -149,5 +150,6 @@ func GetAlbumThumb(track player.Track) (*gtk.Picture, error) {
 	// at some point
 	picture := gtk.NewPictureForFilename(thumb_path)
 	picture.SetCanShrink(true)
+	picture.SetContentFit(gtk.ContentFitContain)
 	return picture, nil
 }

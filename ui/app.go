@@ -3,11 +3,10 @@ package ui
 import (
 	"fmt"
 	"os"
-	"slices"
-	"strings"
 
 	"github.com/KotonBads/mosaic/player"
 	"github.com/charmbracelet/log"
+	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 
 	_ "embed"
@@ -26,10 +25,12 @@ func test_queue() []*gtk.ListBoxRow {
 	return queue
 }
 
-func scrolled_list(items []player.Track, onSelect func(track player.Track)) gtk.Widgetter {
+func scrolled_list(p *player.Player, onSelect func(idx int)) (*gtk.ListBox, gtk.Widgetter) {
 	list := gtk.NewListBox()
 	list.SetVExpand(true)
 	list.AddCSSClass("sidebar")
+
+	items := p.Queue
 
 	for _, item := range items {
 		row := gtk.NewListBoxRow()
@@ -37,13 +38,16 @@ func scrolled_list(items []player.Track, onSelect func(track player.Track)) gtk.
 		list.Append(row)
 	}
 
-	list.ConnectRowSelected(func(row *gtk.ListBoxRow) {
+	list.ConnectRowActivated(func(row *gtk.ListBoxRow) {
 		if row == nil {
 			return
 		}
 		idx := row.Index()
 		if idx >= 0 && idx < len(items) {
-			onSelect(items[idx])
+			p.PlayTrack(idx)
+			if onSelect != nil {
+				onSelect(idx)
+			}
 		}
 	})
 
@@ -52,14 +56,7 @@ func scrolled_list(items []player.Track, onSelect func(track player.Track)) gtk.
 	scrolled := gtk.NewScrolledWindow()
 	scrolled.SetPolicy(gtk.PolicyNever, gtk.PolicyAutomatic)
 	scrolled.SetChild(list)
-	return scrolled
-}
-
-func header() gtk.Widgetter {
-	header := gtk.NewHeaderBar()
-	header.SetShowTitleButtons(false)
-
-	return header
+	return list, scrolled
 }
 
 func App() {
@@ -73,9 +70,13 @@ func App() {
 	library.Index("/home/koton-bads/Music/")
 	library.Load()
 
-	library.Player = &player.Player{}
+	library.Player = &player.Player{
+		Queue: library.Tracks,
+	}
 
-	app := NewWindow(func(win *gtk.ApplicationWindow) {
+	library.Player.SortAlphabetically()
+
+	app := NewWindow(func(win *adw.ApplicationWindow) {
 		logger.Info("Prefetching album art")
 		go func() {
 			for _, track := range library.Tracks {
@@ -85,11 +86,23 @@ func App() {
 			logger.Info("Prefetching complete")
 		}()
 
-		logger.Info("Building main UI layout")
-		pane := gtk.NewPaned(gtk.OrientationHorizontal)
-		pane.SetPosition(360)
-		pane.SetResizeStartChild(true)
-		pane.SetResizeEndChild(false)
+		logger.Info("Building Libadwaita OverlaySplitView responsive layout")
+
+		// Detail container holding either the placeholder or track details
+		detailContainer := gtk.NewBox(gtk.OrientationVertical, 0)
+		detailContainer.SetHExpand(true)
+		detailContainer.SetVExpand(true)
+
+		setDetail := func(w gtk.Widgetter) {
+			for child := detailContainer.FirstChild(); child != nil; {
+				next := gtk.BaseWidget(child).NextSibling()
+				detailContainer.Remove(child)
+				child = next
+			}
+			if w != nil {
+				detailContainer.Append(w)
+			}
+		}
 
 		// Initial right pane placeholder
 		placeholder := gtk.NewBox(gtk.OrientationVertical, 8)
@@ -102,13 +115,44 @@ func App() {
 		lblPrompt.AddCSSClass("dim-label")
 		placeholder.Append(lblPrompt)
 
-		pane.SetEndChild(placeholder)
+		setDetail(placeholder)
 
-		sortedTracks := slices.SortedStableFunc(slices.Values(library.Tracks), func(a, b player.Track) int {
-			return strings.Compare(a.Title, b.Title)
+		// Overlay split view setup
+		splitView := adw.NewOverlaySplitView()
+		splitView.SetSidebarWidthFraction(0.32)
+		splitView.SetMinSidebarWidth(260)
+		splitView.SetMaxSidebarWidth(420)
+		splitView.SetEnableShowGesture(true)
+		splitView.SetEnableHideGesture(true)
+
+		// Header Bar toggle button for small screens / collapsed mode
+		toggleQueueBtn := gtk.NewButtonFromIconName("view-list-symbolic")
+		toggleQueueBtn.SetTooltipText("Toggle Queue")
+		toggleQueueBtn.SetVisible(false)
+
+		toggleQueueBtn.ConnectClicked(func() {
+			splitView.SetShowSidebar(!splitView.ShowSidebar())
 		})
 
-		list := scrolled_list(sortedTracks, func(track player.Track) {
+		var (
+			sidebarList *gtk.ListBox
+			showTrack   func(idx int)
+		)
+
+		showTrack = func(idx int) {
+			if idx < 0 || idx >= len(library.Player.Queue) {
+				return
+			}
+
+			// Highlight the track row in the sidebar
+			if sidebarList != nil {
+				if row := sidebarList.RowAtIndex(idx); row != nil {
+					sidebarList.SelectRow(row)
+				}
+			}
+
+			track := library.Player.Queue[idx]
+
 			pic, err := GetAlbumArt(track)
 			if err != nil {
 				logger.Warn("Failed to load album art", "track", track.Title, "err", err)
@@ -148,20 +192,57 @@ func App() {
 			detailBox.Append(af)
 			detailBox.Append(titleLabel)
 			detailBox.Append(artistLabel)
-
 			detailBox.Append(PlayerControls(library.Player))
 
-			pane.SetEndChild(detailBox)
+			setDetail(detailBox)
+		}
+
+		// When track changes via Next/Prev/click, propagate to UI
+		library.Player.OnTrackChange = func(idx int) {
+			showTrack(idx)
+		}
+
+		list, listWidget := scrolled_list(library.Player, func(idx int) {
+			// When collapsed, auto-hide drawer after track selection to focus on player
+			if splitView.Collapsed() {
+				splitView.SetShowSidebar(false)
+			}
+		})
+		sidebarList = list
+
+		queueBox := gtk.NewBox(gtk.OrientationVertical, 0)
+		queueBox.SetVExpand(true)
+		queueBox.SetHExpand(true)
+		queueBox.AddCSSClass("background")
+		queueBox.Append(listWidget)
+
+		splitView.SetSidebar(queueBox)
+		splitView.SetContent(detailContainer)
+
+		// Responsive Libadwaita Breakpoint (<= 760px)
+		bp := adw.NewBreakpoint(adw.BreakpointConditionParse("max-width: 760px"))
+		bp.ConnectApply(func() {
+			logger.Debug("Applying narrow breakpoint: collapsing split view")
+			splitView.SetCollapsed(true)
+			toggleQueueBtn.SetVisible(true)
+		})
+		bp.ConnectUnapply(func() {
+			logger.Debug("Unapplying narrow breakpoint: uncollapsing split view")
+			splitView.SetCollapsed(false)
+			toggleQueueBtn.SetVisible(false)
 		})
 
-		box := gtk.NewBox(gtk.OrientationVertical, 4)
-		box.SetVExpand(true)
-		box.SetHExpand(true)
-		box.Append(header())
-		box.Append(list)
+		win.AddBreakpoint(bp)
 
-		pane.SetStartChild(box)
-		win.SetChild(pane)
+		// Adwaita ToolbarView and HeaderBar
+		headerBar := adw.NewHeaderBar()
+		headerBar.PackStart(toggleQueueBtn)
+
+		toolbar := adw.NewToolbarView()
+		toolbar.AddTopBar(headerBar)
+		toolbar.SetContent(splitView)
+
+		win.SetContent(toolbar)
 	})
 
 	exitCode := app.Run(os.Args)

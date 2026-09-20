@@ -59,13 +59,14 @@ const (
 )
 
 type Player struct {
-	Pos        time.Duration
-	Queue      []Track
-	CurrentIdx int
-	Paused     bool
-	Shuffle    bool
-	Repeat     RepeatMode
-	Volume     int
-	MPV        *Client
-	OnChange   func()
+	Pos           time.Duration
+	Queue         []Track
+	CurrentIdx    int
+	Paused        bool
+	Shuffle       bool
+	Repeat        RepeatMode
+	Volume        int
+	MPV           *Client
+	OnChange      func()
+	OnTrackChange func(idx int)
 }

@@ -2,6 +2,7 @@ package ui
 
 import (
 	"strings"
+	"time"
 
 	"github.com/KotonBads/mosaic/player"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
@@ -29,12 +30,19 @@ func PlayerControls(p *player.Player) gtk.Widgetter {
 	next := gtk.NewButtonFromIconName("media-skip-forward-symbolic")
 	shuffle := gtk.NewButtonFromIconName("media-playlist-shuffle-symbolic")
 	repeat := gtk.NewButtonFromIconName("media-playlist-repeat-symbolic")
+	seek_bar := gtk.NewScaleWithRange(gtk.OrientationHorizontal, 0, 100, 1)
+
+	seek_bar.SetHExpand(true)
+	seek_bar.SetDrawValue(false)
 
 	box.Append(shuffle)
 	box.Append(previous)
 	box.Append(play_pause)
 	box.Append(next)
 	box.Append(repeat)
+	box.Append(seek_bar)
+
+	var updatingUI bool
 
 	refresh := func() {
 		if p == nil {
@@ -64,6 +72,16 @@ func PlayerControls(p *player.Player) gtk.Widgetter {
 			repeat.SetIconName("media-playlist-repeat-symbolic")
 			repeat.AddCSSClass("dim-label")
 		}
+
+		if len(p.Queue) > 0 && p.CurrentIdx >= 0 && p.CurrentIdx < len(p.Queue) {
+			duration := p.Queue[p.CurrentIdx].Duration
+			if duration > 0 {
+				updatingUI = true
+				percent := (p.Pos.Seconds() / duration.Seconds()) * 100.0
+				seek_bar.SetValue(percent)
+				updatingUI = false
+			}
+		}
 	}
 
 	if p != nil {
@@ -72,6 +90,17 @@ func PlayerControls(p *player.Player) gtk.Widgetter {
 		shuffle.ConnectClicked(p.SetShuffle)
 		next.ConnectClicked(p.Next)
 		previous.ConnectClicked(p.Prev)
+		seek_bar.ConnectValueChanged(func() {
+			if updatingUI {
+				return
+			}
+			if len(p.Queue) == 0 || p.CurrentIdx < 0 || p.CurrentIdx >= len(p.Queue) {
+				return
+			}
+			track := p.Queue[p.CurrentIdx]
+			ratio := seek_bar.Value() / 100.0
+			p.Seek(time.Duration(ratio * float64(track.Duration)))
+		})
 
 		p.OnChange = refresh
 	}
@@ -91,10 +120,13 @@ func QueueElement(track player.Track) gtk.Widgetter {
 	}
 
 	picture, err := GetAlbumThumb(track)
-	if err != nil {
+	if err != nil || picture == nil {
 		logger.Warn("Failed to load album thumbnail", "track", track.Title, "err", err)
+		picture = gtk.NewPicture()
 	}
 
+	picture.SetCanShrink(true)
+	picture.SetContentFit(gtk.ContentFitContain)
 	picture.SetSizeRequest(42, 42)
 	picture.SetHAlign(gtk.AlignCenter)
 	picture.SetVAlign(gtk.AlignCenter)
@@ -131,4 +163,10 @@ func QueueElement(track player.Track) gtk.Widgetter {
 	box.Append(text_box)
 
 	return box
+}
+
+func Queue(p player.Player) gtk.Widgetter {
+	
+	
+	return nil
 }

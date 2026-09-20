@@ -1,6 +1,7 @@
 package ui
 
 import (
+	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/gdk/v4"
 	"github.com/diamondburned/gotk4/pkg/gio/v2"
 	"github.com/diamondburned/gotk4/pkg/glib/v2"
@@ -27,13 +28,13 @@ func NewPaned() *gtk.Paned {
 	return gtk.NewPaned(gtk.OrientationHorizontal)
 }
 
-func NewWindow(onActivate func(win *gtk.ApplicationWindow)) *gtk.Application {
-	app := gtk.NewApplication("com.KotonBads.Mosaic", gio.ApplicationDefaultFlags)
+func NewWindow(onActivate func(win *adw.ApplicationWindow)) *adw.Application {
+	app := adw.NewApplication("com.KotonBads.Mosaic", gio.ApplicationDefaultFlags)
 	app.ConnectActivate(func() {
-		logger.Info("Activating GTK application window", "appID", "com.KotonBads.Mosaic")
+		logger.Info("Activating Adwaita application window", "appID", "com.KotonBads.Mosaic")
 
 		load_css()
-		win := gtk.NewApplicationWindow(app)
+		win := adw.NewApplicationWindow(&app.Application)
 		win.SetTitle("Mosaic")
 		win.SetDefaultSize(1280, 720)
 

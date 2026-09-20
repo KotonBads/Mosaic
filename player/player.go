@@ -28,9 +28,36 @@ func (p *Player) SetRepeat() {
 }
 
 func (p *Player) SetShuffle() {
-	logger.Debug("Set shuffle", "state", p.Shuffle)
+	logger.Info("Set shuffle", "state", p.Shuffle)
 	p.Shuffle = !p.Shuffle
+	if p.Shuffle {
+		p.ShuffleQueue()
+	} else {
+		p.SortAlphabetically()
+	}
 	p.notify()
+	p.OnTrackChange(p.CurrentIdx)
+}
+
+func (p *Player) PlayTrack(idx int) {
+	if len(p.Queue) == 0 || idx < 0 || idx >= len(p.Queue) {
+		return
+	}
+	logger.Debug("Play track", "index", idx, "title", p.Queue[idx].Title)
+	p.CurrentIdx = idx
+	p.Pos = 0
+	if p.MPV != nil {
+		_ = p.MPV.PlayFile(p.Queue[idx].Path)
+	}
+	p.notify()
+	if p.OnTrackChange != nil {
+		trackIdx := idx
+		glib.IdleAdd(func() {
+			if p.OnTrackChange != nil {
+				p.OnTrackChange(trackIdx)
+			}
+		})
+	}
 }
 
 func (p *Player) Next() {
@@ -38,14 +65,8 @@ func (p *Player) Next() {
 	if len(p.Queue) == 0 {
 		return
 	}
-	p.CurrentIdx = max((p.CurrentIdx+1)%len(p.Queue), 0)
-	if p.CurrentIdx >= len(p.Queue) {
-		p.CurrentIdx = len(p.Queue) - 1
-	}
-	if p.MPV != nil {
-		_ = p.MPV.PlayFile(p.Queue[p.CurrentIdx].Path)
-	}
-	p.notify()
+	nextIdx := (p.CurrentIdx + 1) % len(p.Queue)
+	p.PlayTrack(nextIdx)
 }
 
 func (p *Player) Prev() {
@@ -53,18 +74,12 @@ func (p *Player) Prev() {
 	if len(p.Queue) == 0 {
 		return
 	}
-	p.CurrentIdx = max((p.CurrentIdx - 1 + len(p.Queue)) % len(p.Queue), 0)
-	if p.CurrentIdx >= len(p.Queue) {
-		p.CurrentIdx = len(p.Queue) - 1
-	}
-	if p.MPV != nil {
-		_ = p.MPV.PlayFile(p.Queue[p.CurrentIdx].Path)
-	}
-	p.notify()
+	prevIdx := (p.CurrentIdx - 1 + len(p.Queue)) % len(p.Queue)
+	p.PlayTrack(prevIdx)
 }
 
 func (p *Player) Seek(t time.Duration) {
-	logger.Debug("Seek", "time", t)
+	logger.Info("Seek", "pos", t)
 	p.Pos = t
 	if p.MPV != nil {
 		_ = p.MPV.Seek(t.Seconds())
