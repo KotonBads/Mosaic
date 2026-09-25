@@ -94,6 +94,9 @@ func App() {
 		split_view.SetMaxSidebarWidth(450)
 		split_view.SetSidebarWidthFraction(0.35)
 
+		breakpoint := adw.NewBreakpoint(adw.BreakpointConditionParse("max-width: 630px"))
+		breakpoint.AddSetter(split_view, "collapsed", true)
+
 		player_refresh := func(track player.Track) {
 			library.Player.CurrentIdx = slices.IndexFunc(library.Player.Queue, func(found player.Track) bool {
 				if found.ID == track.ID {
@@ -170,6 +173,7 @@ func App() {
 		library.Player.Subscribe(player.OnTrackChange, player_refresh)
 
 		win.SetContent(split_view)
+		win.AddBreakpoint(breakpoint)
 	})
 
 	exitCode := app.Run(os.Args)
