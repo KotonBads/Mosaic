@@ -12,6 +12,16 @@ import (
 	coreglib "github.com/diamondburned/gotk4/pkg/core/glib"
 )
 
+var SOCKET_PATH = os.Getenv("XDG_RUNTIME_DIR")
+
+func (c *Client) Init() {
+	if SOCKET_PATH == "" {
+		SOCKET_PATH = os.TempDir()
+	}
+	c.socketPath = SOCKET_PATH
+	
+}
+
 // StartMPV launches an isolated mpv process with an IPC socket server
 func StartMPV(socketPath string) (*Client, error) {
 	logger.Debug("Preparing MPV socket", "socketPath", socketPath)
