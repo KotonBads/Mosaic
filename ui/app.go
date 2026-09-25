@@ -154,8 +154,9 @@ func App() {
 		}
 
 		queue_refresh()
+		player_refresh(library.Player.Queue[library.Player.CurrentIdx])
 
-		library.Player.Subscribe(player.QueueChange, queue_refresh)
+		// library.Player.Subscribe(player.QueueChange, queue_refresh)
 		library.Player.Subscribe(player.OnTrackChange, player_refresh)
 
 		win.SetContent(split_view)
