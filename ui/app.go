@@ -1,14 +1,20 @@
 package ui
 
 import (
+	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
+	"strings"
+	"sync"
 
+	"github.com/AvengeMedia/dankgo/lyrics"
 	"github.com/KotonBads/mosaic/player"
 	"github.com/charmbracelet/log"
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
+	"github.com/diamondburned/gotk4/pkg/pango"
 
 	_ "embed"
 )
@@ -84,8 +90,53 @@ func App() {
 		logger.Error("Failed to init MPV client", "err", err)
 	}
 
+	library.Player.MPRIS = &player.MPRIS{}
+	library.Player.MPRIS.Init(library.Player)
+
+	logger.Info("Prefetching lyrics")
+	go func() {
+		cache_dir, _ := os.UserCacheDir()
+		client := lyrics.New(lyrics.Options{
+			CacheDir: filepath.Join(cache_dir, "mosaic", "lyrics"),
+		})
+		var wg sync.WaitGroup
+		for _, track := range library.Player.Queue {
+			go func() {
+				wg.Add(1)
+				artists := make([]string, len(track.Artists))
+				for i, a := range track.Artists {
+					artists[i] = a.Name
+				}
+				request := lyrics.Request{
+					Title:    track.Title,
+					Artist:   strings.Join(artists, ", "),
+					Album:    track.Album.Title,
+					Duration: track.Duration,
+				}
+				client.Lookup(context.TODO(), request)
+				wg.Done()
+			}()
+		}
+		wg.Wait()
+		logger.Info("Lyrics prefetch complete")
+	}()
+
 	app := NewWindow(func(win *adw.ApplicationWindow) {
 		logger.Info("Building Libadwaita OverlaySplitView responsive layout")
+
+		root_overlay := gtk.NewOverlay()
+		root_overlay.SetHExpand(true)
+		root_overlay.SetVExpand(true)
+		root_overlay.SetOverflow(gtk.OverflowHidden)
+		root_overlay.AddCSSClass("ambient-overlay")
+
+		bg_picture := gtk.NewPicture()
+		bg_picture.SetCanShrink(true)
+		bg_picture.SetContentFit(gtk.ContentFitCover)
+		bg_picture.SetHExpand(true)
+		bg_picture.SetVExpand(true)
+		bg_picture.AddCSSClass("ambient-bg")
+		root_overlay.SetChild(bg_picture)
 
 		split_view := adw.NewOverlaySplitView()
 		split_view.SetHExpand(true)
@@ -93,6 +144,8 @@ func App() {
 		split_view.SetMinSidebarWidth(260)
 		split_view.SetMaxSidebarWidth(450)
 		split_view.SetSidebarWidthFraction(0.35)
+
+		root_overlay.AddOverlay(split_view)
 
 		breakpoint := adw.NewBreakpoint(adw.BreakpointConditionParse("max-width: 630px"))
 		breakpoint.AddSetter(split_view, "collapsed", true)
@@ -104,6 +157,17 @@ func App() {
 				}
 				return false
 			})
+
+			ambientTex, err := GetBlurredAmbientArt(track)
+			if err == nil && ambientTex != nil {
+				bg_picture.SetPaintable(ambientTex)
+			}
+
+			// Main player column overlay: allows a 450x450 lyrics card to float on top of everything
+			content_overlay := gtk.NewOverlay()
+			content_overlay.SetHExpand(true)
+			content_overlay.SetVExpand(true)
+
 			player_area := gtk.NewBox(gtk.OrientationVertical, 40)
 			player_area.SetVAlign(gtk.AlignCenter)
 			player_area.SetMarginStart(24)
@@ -114,7 +178,8 @@ func App() {
 			album_art := gtk.NewAspectFrame(0.5, 0.5, 1.0, false)
 			album_art.SetOverflow(gtk.OverflowHidden)
 			album_art.AddCSSClass("album-art")
-			album_art.SetSizeRequest(120, 120)
+			album_art.AddCSSClass("album-art-active")
+			album_art.SetSizeRequest(320, 320)
 
 			picture, err := AlbumArt(track)
 			if err != nil {
@@ -122,10 +187,46 @@ func App() {
 			}
 			album_art.SetChild(picture)
 
-			album_clamped := adw.NewClamp()
-			album_clamped.SetChild(album_art)
-			album_clamped.SetMaximumSize(320)
-			player_area.Append(album_clamped)
+			art_clamped := adw.NewClamp()
+			art_clamped.SetChild(album_art)
+			art_clamped.SetMaximumSize(320)
+			player_area.Append(art_clamped)
+
+			lyrics := Lyrics(library.Player)
+
+			lyrics_revealer := gtk.NewRevealer()
+			lyrics_revealer.SetTransitionType(gtk.RevealerTransitionTypeCrossfade)
+			lyrics_revealer.SetTransitionDuration(300)
+			lyrics_revealer.SetRevealChild(false)
+			lyrics_revealer.SetHAlign(gtk.AlignCenter)
+			lyrics_revealer.SetVAlign(gtk.AlignCenter)
+			lyrics_revealer.SetCanTarget(false) // Critical: do NOT block pointer events when unrevealed!
+			lyrics_revealer.SetChild(lyrics)
+
+			content_overlay.AddOverlay(lyrics_revealer)
+			content_overlay.SetMeasureOverlay(lyrics_revealer, false)
+
+			// Clicking the album art opens the 450x450 floating lyrics card and disappears the album art
+			art_click := gtk.NewGestureClick()
+			art_click.SetPropagationPhase(gtk.PhaseBubble)
+			art_click.ConnectPressed(func(nPress int, x, y float64) {
+				lyrics_revealer.SetCanTarget(true)
+				lyrics_revealer.SetRevealChild(true)
+				album_art.RemoveCSSClass("album-art-active")
+				album_art.AddCSSClass("album-art-hidden")
+			})
+			album_art.AddController(art_click)
+
+			// Clicking the lyrics card closes it and restores the crisp album art
+			lyrics_click := gtk.NewGestureClick()
+			lyrics_click.SetPropagationPhase(gtk.PhaseBubble)
+			lyrics_click.ConnectPressed(func(nPress int, x, y float64) {
+				lyrics_revealer.SetCanTarget(false)
+				lyrics_revealer.SetRevealChild(false)
+				album_art.RemoveCSSClass("album-art-hidden")
+				album_art.AddCSSClass("album-art-active")
+			})
+			lyrics.AddController(lyrics_click)
 
 			song_info := gtk.NewBox(gtk.OrientationVertical, 0)
 			song_info.SetHExpand(true)
@@ -134,6 +235,7 @@ func App() {
 
 			song_title := gtk.NewLabel(track.Title)
 			song_title.AddCSSClass("title-4")
+			song_title.SetEllipsize(pango.EllipsizeEnd)
 			song_info.Append(song_title)
 
 			song_artist := gtk.NewLabel(track.Artists[0].Name)
@@ -149,7 +251,8 @@ func App() {
 			controls_clamped.SetMaximumSize(420)
 			player_area.Append(controls_clamped)
 
-			split_view.SetContent(player_area)
+			content_overlay.SetChild(player_area)
+			split_view.SetContent(content_overlay)
 		}
 
 		queue_refresh := func() {
@@ -163,6 +266,8 @@ func App() {
 		queue_refresh()
 		logger.Info("Setting player screen to song index: ", "index", library.Player.CurrentIdx)
 		player_refresh(library.Player.Queue[library.Player.CurrentIdx])
+		library.Player.SetVolume(20)
+		library.Player.Notify()
 
 		library.Player.MPV.OnTrackEnd = func(reason string) {
 			if reason == "stop" {
@@ -172,7 +277,7 @@ func App() {
 		}
 		library.Player.Subscribe(player.OnTrackChange, player_refresh)
 
-		win.SetContent(split_view)
+		win.SetContent(root_overlay)
 		win.AddBreakpoint(breakpoint)
 	})
 

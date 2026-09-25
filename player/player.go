@@ -9,7 +9,7 @@ import (
 
 var logger = log.WithPrefix("player")
 
-func (p *Player) notify() {
+func (p *Player) Notify() {
 	if p.ControlChange != nil {
 		glib.IdleAdd(func() {
 			for _, f := range p.ControlChange {
@@ -36,7 +36,7 @@ func (p *Player) Play() {
 	if p.MPV != nil {
 		_ = p.MPV.Play()
 	}
-	p.notify()
+	p.Notify()
 }
 
 func (p *Player) Pause() {
@@ -45,7 +45,7 @@ func (p *Player) Pause() {
 	if p.MPV != nil {
 		_ = p.MPV.Pause()
 	}
-	p.notify()
+	p.Notify()
 }
 
 func (p *Player) PlayPause() {
@@ -54,13 +54,13 @@ func (p *Player) PlayPause() {
 	if p.MPV != nil {
 		_ = p.MPV.TogglePause()
 	}
-	p.notify()
+	p.Notify()
 }
 
 func (p *Player) SetRepeat() {
 	logger.Debug("Set repeat", "state", p.Repeat)
 	p.Repeat = (p.Repeat + 1) % 3
-	p.notify()
+	p.Notify()
 }
 
 func (p *Player) SetShuffle() {
@@ -71,7 +71,7 @@ func (p *Player) SetShuffle() {
 	} else {
 		p.SortAlphabetically()
 	}
-	p.notify()
+	p.Notify()
 	for _, f := range p.QueueChange {
 		f()
 	}
@@ -85,11 +85,10 @@ func (p *Player) PlayTrack(idx int) {
 	track := p.Queue[idx]
 	p.CurrentIdx = idx
 	p.Pos = 0
-	p.SetVolume(20)
 	if p.MPV != nil {
 		_ = p.MPV.PlayFile(p.Queue[idx].Path)
 	}
-	p.notify()
+	p.Notify()
 	if len(p.OnTrackChange) > 0 {
 		glib.IdleAdd(func() {
 			for _, f := range p.OnTrackChange {
@@ -139,7 +138,7 @@ func (p *Player) Seek(t time.Duration) {
 	if p.MPV != nil {
 		_ = p.MPV.Seek(t.Seconds())
 	}
-	p.notify()
+	p.Notify()
 }
 
 func (p *Player) SetVolume(v int) {
@@ -148,5 +147,4 @@ func (p *Player) SetVolume(v int) {
 	if p.MPV != nil {
 		_ = p.MPV.SetVolume(float64(v))
 	}
-	p.notify()
 }

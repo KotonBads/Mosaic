@@ -151,29 +151,30 @@ func (lib *Library) Load() error {
 			trackArtists = append(trackArtists, Artist{Name: name})
 		}
 
-		track := Track{
-			ID:       id,
-			Path:     filePath,
-			Title:    title,
-			Artists:  trackArtists,
-			Album:    albumTitle,
-			Duration: time.Duration(durationSec) * time.Second,
-		}
-		tracks = append(tracks, track)
-
-		// Group into Album
 		album, exists := albumMap[albumTitle]
 		if !exists {
 			var year time.Time
 			if dateStr != "" {
-				year, _ = time.Parse(time.RFC3339, dateStr)
+				year = parseDate(dateStr)
 			}
 			album = &Album{
 				Title: albumTitle,
 				Year:  year,
 			}
 			albumMap[albumTitle] = album
+		} else if album.Year.IsZero() && dateStr != "" {
+			album.Year = parseDate(dateStr)
 		}
+
+		track := Track{
+			ID:       id,
+			Path:     filePath,
+			Title:    title,
+			Artists:  trackArtists,
+			Album:    *album,
+			Duration: time.Duration(durationSec) * time.Second,
+		}
+		tracks = append(tracks, track)
 		album.Tracks = append(album.Tracks, track)
 
 		// Register Artists

@@ -99,7 +99,7 @@ func GetAlbumArt(track player.Track) (*gtk.Picture, error) {
 	// sanitize everything
 	// thanks fall out boy
 	artists := sanitize_name(join_artist_name(track.Artists))
-	art_path := fmt.Sprintf("%s/%s - %s.png", art_dir, artists, sanitize_name(track.Album))
+	art_path := fmt.Sprintf("%s/%s - %s.png", art_dir, artists, sanitize_name(track.Album.Title))
 
 	_, err = os.Stat(art_path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -141,7 +141,7 @@ func GetAlbumThumb(track player.Track) (*gtk.Picture, error) {
 	}
 
 	artists := sanitize_name(join_artist_name(track.Artists))
-	thumb_path := fmt.Sprintf("%s/%s - %s.png", thumb_dir, artists, sanitize_name(track.Album))
+	thumb_path := fmt.Sprintf("%s/%s - %s.png", thumb_dir, artists, sanitize_name(track.Album.Title))
 
 	_, err = os.Stat(thumb_path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -169,4 +169,49 @@ func GetAlbumThumb(track player.Track) (*gtk.Picture, error) {
 	picture.SetCanShrink(true)
 	picture.SetContentFit(gtk.ContentFitContain)
 	return picture, nil
+}
+
+// GetBlurredAmbientArt implements dual-filtering / pyramid downsampling and upsampling
+// (Maki/Kawase blur approximation) using intermediate mip buffers.
+// Successively downscaling and upscaling with bilinear filtering eliminates blocky pixelation
+// and banding while generating a beautifully smooth, high-radius diffuse blur.
+func GetBlurredAmbientArt(track player.Track) (*gdk.Texture, error) {
+	cache_dir, err := os.UserCacheDir()
+	if err != nil {
+		return nil, err
+	}
+
+	artists := sanitize_name(join_artist_name(track.Artists))
+	art_path := fmt.Sprintf("%s/mosaic/art/%s - %s.png", cache_dir, artists, sanitize_name(track.Album.Title))
+
+	// Ensure full art exists in cache
+	if _, err := os.Stat(art_path); errors.Is(err, os.ErrNotExist) {
+		if _, err := GetAlbumArt(track); err != nil {
+			return nil, err
+		}
+	}
+
+	current, err := gdkpixbuf.NewPixbufFromFile(art_path)
+	if err != nil {
+		return nil, err
+	}
+
+	// Downsample pyramid: progressively halve the resolution to smoothly filter high frequencies
+	downSteps := []int{256, 128, 64, 32, 16}
+	for _, size := range downSteps {
+		if next := current.ScaleSimple(size, size, gdkpixbuf.InterpBilinear); next != nil {
+			current = next
+		}
+	}
+
+	// Upsample pyramid: step back up through intermediate resolutions with bilinear filtering
+	// to smoothly diffuse the low-frequency color gradients without nearest-neighbor grid artifacts
+	upSteps := []int{32, 64, 128, 256}
+	for _, size := range upSteps {
+		if next := current.ScaleSimple(size, size, gdkpixbuf.InterpBilinear); next != nil {
+			current = next
+		}
+	}
+
+	return gdk.NewTextureForPixbuf(current), nil
 }
