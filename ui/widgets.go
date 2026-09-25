@@ -24,6 +24,7 @@ func AlbumArt(track player.Track) (*gtk.Picture, error) {
 
 func PlayerControls(p *player.Player) gtk.Widgetter {
 	controls_box := gtk.NewBox(gtk.OrientationHorizontal, 12)
+	seek_box := gtk.NewBox(gtk.OrientationHorizontal, 4)
 	final_box := gtk.NewBox(gtk.OrientationVertical, 4)
 
 	play_pause := gtk.NewButtonFromIconName("media-playback-pause-symbolic")
@@ -32,17 +33,26 @@ func PlayerControls(p *player.Player) gtk.Widgetter {
 	shuffle := gtk.NewButtonFromIconName("media-playlist-shuffle-symbolic")
 	repeat := gtk.NewButtonFromIconName("media-playlist-repeat-symbolic")
 	seek_bar := gtk.NewScaleWithRange(gtk.OrientationHorizontal, 0, 100, 1)
+	pos_cur := gtk.NewLabel(format_time(p.Pos))
+	pos_max := gtk.NewLabel(format_time(p.Queue[p.CurrentIdx].Duration))
 
 	controls_box.SetHAlign(gtk.AlignCenter)
+	seek_box.SetHAlign(gtk.AlignFill)
+	seek_box.SetHExpand(true)
 	seek_bar.SetHExpand(true)
 	seek_bar.SetDrawValue(false)
+	final_box.SetHAlign(gtk.AlignFill)
+	final_box.SetHExpand(true)
 
 	controls_box.Append(shuffle)
 	controls_box.Append(previous)
 	controls_box.Append(play_pause)
 	controls_box.Append(next)
 	controls_box.Append(repeat)
-	final_box.Append(seek_bar)
+	seek_box.Append(pos_cur)
+	seek_box.Append(seek_bar)
+	seek_box.Append(pos_max)
+	final_box.Append(seek_box)
 	final_box.Append(controls_box)
 
 	var updatingUI bool
@@ -76,15 +86,8 @@ func PlayerControls(p *player.Player) gtk.Widgetter {
 			repeat.AddCSSClass("dim-label")
 		}
 
-		if len(p.Queue) > 0 && p.CurrentIdx >= 0 && p.CurrentIdx < len(p.Queue) {
-			duration := p.Queue[p.CurrentIdx].Duration
-			if duration > 0 {
-				updatingUI = true
-				percent := (p.Pos.Seconds() / duration.Seconds()) * 100.0
-				seek_bar.SetValue(percent)
-				updatingUI = false
-			}
-		}
+		pos_cur.SetText(format_time(p.Pos))
+		pos_max.SetText(format_time(p.Queue[p.CurrentIdx].Duration))
 	}
 
 	if p != nil {
@@ -105,7 +108,7 @@ func PlayerControls(p *player.Player) gtk.Widgetter {
 			p.Seek(time.Duration(ratio * float64(track.Duration)))
 		})
 
-		p.ControlChange = refresh
+		p.Subscribe(player.ControlChange, refresh)
 	}
 
 	refresh()
@@ -168,8 +171,12 @@ func QueueElement(track player.Track) gtk.Widgetter {
 	return box
 }
 
-func Queue(p player.Player, onChange func(track player.Track)) gtk.Widgetter {
+func Queue(p *player.Player, onChange func(track player.Track)) gtk.Widgetter {
 	var list *gtk.ListBox
+
+	refresh_idx := func(_ player.Track) {
+		list.SelectRow(list.RowAtIndex(p.CurrentIdx))
+	}
 
 	refresh := func() {
 		l := gtk.NewListBox()
@@ -178,9 +185,11 @@ func Queue(p player.Player, onChange func(track player.Track)) gtk.Widgetter {
 		}
 
 		list = l
+		refresh_idx(p.Queue[p.CurrentIdx])
 	}
 
-	p.QueueChange = refresh
+	p.Subscribe(player.QueueChange, refresh)
+	p.Subscribe(player.OnTrackChange, refresh_idx)
 	refresh()
 
 	list.ConnectRowActivated(func(row *gtk.ListBoxRow) {

@@ -8,7 +8,22 @@ import (
 
 func (p *Player) notify() {
 	if p.ControlChange != nil {
-		glib.IdleAdd(p.ControlChange)
+		glib.IdleAdd(func() {
+			for _, f := range p.ControlChange {
+				f()
+			}
+		})
+	}
+}
+
+func (p *Player) Subscribe(event PlayerEvents, f any) {
+	switch event {
+	case ControlChange:
+		p.ControlChange = append(p.ControlChange, f.(func()))
+	case QueueChange:
+		p.QueueChange = append(p.QueueChange, f.(func()))
+	case OnTrackChange:
+		p.OnTrackChange = append(p.OnTrackChange, f.(func(Track)))
 	}
 }
 
@@ -36,14 +51,16 @@ func (p *Player) SetShuffle() {
 		p.SortAlphabetically()
 	}
 	p.notify()
-	p.QueueChange()
+	for _, f := range p.QueueChange {
+		f()
+	}
 }
 
 func (p *Player) PlayTrack(idx int) {
 	if len(p.Queue) == 0 || idx < 0 || idx >= len(p.Queue) {
 		return
 	}
-	logger.Debug("Play track", "index", idx, "title", p.Queue[idx].Title)
+	logger.Info("Play track", "index", idx, "title", p.Queue[idx].Title)
 	track := p.Queue[idx]
 	p.CurrentIdx = idx
 	p.Pos = 0
@@ -51,8 +68,12 @@ func (p *Player) PlayTrack(idx int) {
 		_ = p.MPV.PlayFile(p.Queue[idx].Path)
 	}
 	p.notify()
-	if p.OnTrackChange != nil {
-		glib.IdleAdd(func() { p.OnTrackChange(track) })
+	if len(p.OnTrackChange) > 0 {
+		glib.IdleAdd(func() {
+			for _, f := range p.OnTrackChange {
+				f(track)
+			}
+		})
 	}
 }
 
@@ -61,11 +82,15 @@ func (p *Player) Next() {
 	if len(p.Queue) == 0 {
 		return
 	}
-	nextIdx := (p.CurrentIdx + 1) % len(p.Queue)
-	track := p.Queue[nextIdx]
-	p.PlayTrack(nextIdx)
-	if p.OnTrackChange != nil {
-		glib.IdleAdd(func() { p.OnTrackChange(track) })
+	p.CurrentIdx = (p.CurrentIdx + 1) % len(p.Queue)
+	track := p.Queue[p.CurrentIdx]
+	p.PlayTrack(p.CurrentIdx)
+	if len(p.OnTrackChange) > 0 {
+		glib.IdleAdd(func() {
+			for _, f := range p.OnTrackChange {
+				f(track)
+			}
+		})
 	}
 }
 
@@ -74,11 +99,15 @@ func (p *Player) Prev() {
 	if len(p.Queue) == 0 {
 		return
 	}
-	prevIdx := (p.CurrentIdx - 1 + len(p.Queue)) % len(p.Queue)
-	track := p.Queue[prevIdx]
-	p.PlayTrack(prevIdx)
-	if p.OnTrackChange != nil {
-		glib.IdleAdd(func() { p.OnTrackChange(track) })
+	p.CurrentIdx = (p.CurrentIdx - 1 + len(p.Queue)) % len(p.Queue)
+	track := p.Queue[p.CurrentIdx]
+	p.PlayTrack(p.CurrentIdx)
+	if len(p.OnTrackChange) > 0 {
+		glib.IdleAdd(func() {
+			for _, f := range p.OnTrackChange {
+				f(track)
+			}
+		})
 	}
 }
 

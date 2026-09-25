@@ -3,6 +3,7 @@ package ui
 import (
 	"fmt"
 	"os"
+	"slices"
 
 	"github.com/KotonBads/mosaic/player"
 	"github.com/charmbracelet/log"
@@ -96,6 +97,12 @@ func App() {
 		split_view.SetSidebarWidthFraction(0.35)
 
 		player_refresh := func(track player.Track) {
+			library.Player.CurrentIdx = slices.IndexFunc(library.Player.Queue, func(found player.Track) bool {
+				if found.ID == track.ID {
+					return true
+				}
+				return false
+			})
 			player_area := gtk.NewBox(gtk.OrientationVertical, 40)
 			player_area.SetVAlign(gtk.AlignCenter)
 
@@ -137,18 +144,19 @@ func App() {
 			controls_clamped.SetMaximumSize(420)
 			player_area.Append(controls_clamped)
 
+			// glib.IdleAdd(library.Player.ControlChange)
 			split_view.SetContent(player_area)
 		}
 
 		queue_refresh := func() {
-			queue := Queue(*library.Player, player_refresh)
+			queue := Queue(library.Player, player_refresh)
 			split_view.SetSidebar(queue)
 		}
 
 		queue_refresh()
 
-		library.Player.QueueChange = queue_refresh
-		library.Player.OnTrackChange = player_refresh
+		library.Player.Subscribe(player.QueueChange, queue_refresh)
+		library.Player.Subscribe(player.OnTrackChange, player_refresh)
 
 		win.SetContent(split_view)
 		// 		// Detail container holding either the placeholder or track details

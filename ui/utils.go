@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"context"
 
@@ -65,6 +66,22 @@ func join_artist_name(artists []player.Artist) string {
 
 func sanitize_name(name string) string {
 	return strings.TrimSpace(strings.ReplaceAll(name, "/", "_"))
+}
+
+func format_time(t time.Duration) string {
+	totalSecs := int64(t.Round(time.Second).Seconds())
+	if totalSecs < 0 {
+		totalSecs = 0
+	}
+
+	h := totalSecs / 3600
+	m := (totalSecs % 3600) / 60
+	s := totalSecs % 60
+
+	if h > 0 {
+		return fmt.Sprintf("%d:%02d:%02d", h, m, s)
+	}
+	return fmt.Sprintf("%02d:%02d", m, s)
 }
 
 func GetAlbumArt(track player.Track) (*gtk.Picture, error) {
