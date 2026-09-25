@@ -100,7 +100,6 @@ func (m *MPRIS) Metadata() (types.Metadata, error) {
 		fmt.Sprintf("%s - %s.png", strings.Join(artists, ", "), sanitize_name(track.Album.Title)),
 	)
 
-	logger.Info("Date", "date", track.Album.Year.Format(time.RFC3339))
 	return types.Metadata{
 		TrackId:        dbus.ObjectPath(fmt.Sprintf("/org/mosaic/track/%d", track.ID)),
 		Title:          track.Title,

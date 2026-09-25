@@ -1,9 +1,14 @@
 package ui
 
 import (
+	"context"
+	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/AvengeMedia/dankgo/lyrics"
 	"github.com/KotonBads/mosaic/player"
 	"github.com/diamondburned/gotk4/pkg/core/glib"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
@@ -26,8 +31,9 @@ func AlbumArt(track player.Track) (*gtk.Picture, error) {
 func PlayerControls(p *player.Player) gtk.Widgetter {
 	controls_box := gtk.NewBox(gtk.OrientationHorizontal, 12)
 	seek_box := gtk.NewBox(gtk.OrientationHorizontal, 4)
+	vol_box := gtk.NewBox(gtk.OrientationHorizontal, 4)
 	final_box := gtk.NewBox(gtk.OrientationVertical, 4)
-	is_dragging := false
+	is_scrubbing := false
 
 	play_pause := gtk.NewButtonFromIconName("media-playback-pause-symbolic")
 	previous := gtk.NewButtonFromIconName("media-skip-backward-symbolic")
@@ -36,13 +42,26 @@ func PlayerControls(p *player.Player) gtk.Widgetter {
 	repeat := gtk.NewButtonFromIconName("media-playlist-repeat-symbolic")
 	seek_bar := gtk.NewScaleWithRange(gtk.OrientationHorizontal, 0, 100, 1)
 	pos_cur := gtk.NewLabel(format_time(p.Pos))
+	pos_cur.AddCSSClass("numeric")
 	pos_max := gtk.NewLabel(format_time(p.Queue[p.CurrentIdx].Duration))
+	pos_max.AddCSSClass("numeric")
+	volume := gtk.NewScaleWithRange(gtk.OrientationHorizontal, 0, 100, 1)
+	vol_cur := gtk.NewLabel(fmt.Sprint(p.Volume))
+	vol_cur.AddCSSClass("numeric")
+	vol_cur.SetWidthChars(3)
+	vol_max := gtk.NewLabel("100")
+	vol_max.AddCSSClass("numeric")
+	vol_max.SetWidthChars(3)
 
 	controls_box.SetHAlign(gtk.AlignCenter)
 	seek_box.SetHAlign(gtk.AlignFill)
 	seek_box.SetHExpand(true)
 	seek_bar.SetHExpand(true)
 	seek_bar.SetDrawValue(false)
+	vol_box.SetHAlign(gtk.AlignFill)
+	vol_box.SetHExpand(true)
+	volume.SetHExpand(true)
+	volume.SetDrawValue(false)
 	final_box.SetHAlign(gtk.AlignFill)
 	final_box.SetHExpand(true)
 
@@ -54,8 +73,12 @@ func PlayerControls(p *player.Player) gtk.Widgetter {
 	seek_box.Append(pos_cur)
 	seek_box.Append(seek_bar)
 	seek_box.Append(pos_max)
+	vol_box.Append(vol_cur)
+	vol_box.Append(volume)
+	vol_box.Append(vol_max)
 	final_box.Append(seek_box)
 	final_box.Append(controls_box)
+	final_box.Append(vol_box)
 
 	refresh := func() {
 		if p == nil {
@@ -86,6 +109,8 @@ func PlayerControls(p *player.Player) gtk.Widgetter {
 			repeat.AddCSSClass("dim-label")
 		}
 
+		vol_cur.SetText(fmt.Sprint(p.Volume))
+		volume.SetValue(float64(p.Volume))
 		pos_cur.SetText(format_time(p.Pos))
 		pos_max.SetText(format_time(p.Queue[p.CurrentIdx].Duration))
 	}
@@ -119,7 +144,7 @@ func PlayerControls(p *player.Player) gtk.Widgetter {
 		})
 		click.ConnectPressed(func(nPress int, x, y float64) {
 			logger.Info("pressed, n press", "n", nPress)
-			is_dragging = true
+			is_scrubbing = true
 		})
 		click.ConnectReleased(func(nPress int, x, y float64) {
 			logger.Info("released, n press", "n", nPress)
@@ -127,10 +152,10 @@ func PlayerControls(p *player.Player) gtk.Widgetter {
 			track := p.Queue[p.CurrentIdx]
 			ratio := seek_bar.Value() / 100
 			p.Seek(time.Duration(ratio * float64(track.Duration)))
-			is_dragging = false
+			is_scrubbing = false
 		})
 		p.MPV.OnTimePos = func(pos float64) {
-			if is_dragging {
+			if is_scrubbing {
 				logger.Info("ignoring time pos", "pos", pos)
 				return
 			}
@@ -139,6 +164,11 @@ func PlayerControls(p *player.Player) gtk.Widgetter {
 			seek_bar.SetValue(float64(pos) * 100 / track.Duration.Seconds())
 			glib.IdleAdd(refresh)
 		}
+
+		volume.ConnectValueChanged(func() {
+			p.SetVolume(int(volume.Value()))
+			vol_cur.SetText(fmt.Sprint(int(volume.Value())))
+		})
 
 		p.Subscribe(player.ControlChange, refresh)
 	}
@@ -255,4 +285,31 @@ func Queue(p *player.Player, onChange func(track player.Track)) gtk.Widgetter {
 	scrollable := gtk.NewScrolledWindow()
 	scrollable.SetChild(list_view)
 	return scrollable
+}
+
+func Lyrics(p *player.Player) gtk.Widgetter {
+	cache_dir, _ := os.UserCacheDir()
+	client := lyrics.New(lyrics.Options{
+		CacheDir: filepath.Join(cache_dir, "mosaic", "lyrics"),
+	})
+
+	track := p.Queue[p.CurrentIdx]
+	artists := make([]string, len(track.Artists))
+	for i, a := range track.Artists {
+		artists[i] = a.Name
+	}
+	request := lyrics.Request{
+		Title:    track.Title,
+		Artist:   strings.Join(artists, ", "),
+		Album:    track.Album.Title,
+		Duration: track.Duration,
+	}
+	result, err := client.Lookup(context.TODO(), request)
+	if err != nil {
+		return gtk.NewLabel("lyrics")
+	}
+
+	scrolled := gtk.NewScrolledWindow()
+	scrolled.SetChild(gtk.NewLabel(result.Lyrics.Plain))
+	return scrolled
 }
