@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/KotonBads/mosaic/player"
+	"github.com/diamondburned/gotk4/pkg/core/glib"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
 	"github.com/diamondburned/gotk4/pkg/pango"
 )
@@ -172,36 +173,54 @@ func QueueElement(track player.Track) gtk.Widgetter {
 }
 
 func Queue(p *player.Player, onChange func(track player.Track)) gtk.Widgetter {
-	var list *gtk.ListBox
-
-	// todo: implement listview
-	refresh_idx := func(_ player.Track) {
-		row := list.RowAtIndex(p.CurrentIdx)
-		list.SelectRow(row)
+	indices := make([]string, len(p.Queue))
+	for i, t := range p.Queue {
+		indices[i] = t.Title
 	}
+	model := gtk.NewStringList(indices)
+	selection := gtk.NewSingleSelection(model)
 
-	refresh := func() {
-		l := gtk.NewListBox()
-		for _, track := range p.Queue {
-			l.Append(QueueElement(track))
-		}
+	factory := gtk.NewSignalListItemFactory()
+	factory.ConnectSetup(func(obj *glib.Object) {
+		list_item := obj.Cast().(*gtk.ListItem)
+		item := QueueElement(p.Queue[p.CurrentIdx])
 
-		list = l
-		refresh_idx(p.Queue[p.CurrentIdx])
-	}
-
-	p.Subscribe(player.QueueChange, refresh)
-	p.Subscribe(player.OnTrackChange, refresh_idx)
-	refresh()
-
-	list.ConnectRowActivated(func(row *gtk.ListBoxRow) {
-		idx := row.Index()
-		p.CurrentIdx = idx
-		onChange(p.Queue[idx])
-		p.PlayTrack(idx)
+		list_item.SetChild(item)
 	})
 
+	factory.ConnectBind(func(obj *glib.Object) {
+		list_item := obj.Cast().(*gtk.ListItem)
+		item := QueueElement(p.Queue[list_item.Position()])
+		list_item.SetChild(item)
+	})
+
+	list_view := gtk.NewListView(selection, &factory.ListItemFactory)
+	list_view.SetSingleClickActivate(true)
+
+	list_view.ConnectActivate(func(pos uint) {
+		curr_track := p.Queue[pos]
+		onChange(curr_track)
+	})
+
+	select_refresh := func(_ player.Track) {
+		list_view.Model().SelectItem(uint(p.CurrentIdx), true)
+		list_view.ScrollTo(uint(p.CurrentIdx), gtk.ListScrollFocus, nil)
+	}
+
+	queue_refresh := func() {
+		indices := make([]string, len(p.Queue))
+		for i, t := range p.Queue {
+			indices[i] = t.Title
+		}
+		model.Splice(0, uint(model.NItems()), indices)
+
+		list_view.Model().SelectItem(uint(p.CurrentIdx), true)
+		list_view.ScrollTo(uint(p.CurrentIdx), gtk.ListScrollFocus, nil)
+	}
+	p.Subscribe(player.OnTrackChange, select_refresh)
+	p.Subscribe(player.QueueChange, queue_refresh)
+
 	scrollable := gtk.NewScrolledWindow()
-	scrollable.SetChild(list)
+	scrollable.SetChild(list_view)
 	return scrollable
 }

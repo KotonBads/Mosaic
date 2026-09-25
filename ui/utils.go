@@ -35,7 +35,7 @@ func ThumbnailFromBytes(data []byte) (*gtk.Picture, error) {
 		gio.NewMemoryInputStreamFromBytes(glib.NewBytes(data)),
 		42,
 		42,
-		true,
+		false,
 	)
 	if err != nil {
 		return nil, err

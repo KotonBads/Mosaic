@@ -55,7 +55,3 @@ func (p *Player) ShuffleQueue() {
 		}
 	}
 }
-
-func sanitize_name(name string) string {
-	return strings.TrimSpace(strings.ReplaceAll(name, "/", "_"))
-}

@@ -76,6 +76,7 @@ func App() {
 	}
 
 	library.Player.SortAlphabetically()
+	library.Player.CurrentIdx = 0
 
 	app := NewWindow(func(win *adw.ApplicationWindow) {
 		logger.Info("Prefetching album art")
@@ -144,7 +145,6 @@ func App() {
 			controls_clamped.SetMaximumSize(420)
 			player_area.Append(controls_clamped)
 
-			// glib.IdleAdd(library.Player.ControlChange)
 			split_view.SetContent(player_area)
 		}
 
@@ -154,8 +154,9 @@ func App() {
 		}
 
 		queue_refresh()
+		logger.Info("Setting player screen to song index: ", "index", library.Player.CurrentIdx)
+		player_refresh(library.Player.Queue[library.Player.CurrentIdx])
 
-		library.Player.Subscribe(player.QueueChange, queue_refresh)
 		library.Player.Subscribe(player.OnTrackChange, player_refresh)
 
 		win.SetContent(split_view)
