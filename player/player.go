@@ -3,8 +3,11 @@ package player
 import (
 	"time"
 
+	"github.com/charmbracelet/log"
 	"github.com/diamondburned/gotk4/pkg/core/glib"
 )
+
+var logger = log.WithPrefix("player")
 
 func (p *Player) notify() {
 	if p.ControlChange != nil {

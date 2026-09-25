@@ -9,11 +9,8 @@ import (
 	"os/exec"
 	"time"
 
-	"github.com/charmbracelet/log"
 	coreglib "github.com/diamondburned/gotk4/pkg/core/glib"
 )
-
-var logger = log.WithPrefix("player")
 
 // StartMPV launches an isolated mpv process with an IPC socket server
 func StartMPV(socketPath string) (*Client, error) {
