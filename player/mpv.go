@@ -7,25 +7,25 @@ import (
 	"net"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"syscall"
 	"time"
 
+	"github.com/charmbracelet/log"
 	coreglib "github.com/diamondburned/gotk4/pkg/core/glib"
 )
 
-var SOCKET_PATH = os.Getenv("XDG_RUNTIME_DIR")
+var SOCKET_DIR = os.Getenv("XDG_RUNTIME_DIR")
 
-func (c *Client) Init() {
-	if SOCKET_PATH == "" {
-		SOCKET_PATH = os.TempDir()
+func (c *Client) Init() error {
+	logger.SetLevel(log.InfoLevel)
+
+	if SOCKET_DIR == "" {
+		c.socketPath = filepath.Join("/tmp", "mosaic.sock")
 	}
-	c.socketPath = SOCKET_PATH
-	
-}
+	c.socketPath = filepath.Join(SOCKET_DIR, "mosaic.sock")
 
-// StartMPV launches an isolated mpv process with an IPC socket server
-func StartMPV(socketPath string) (*Client, error) {
-	logger.Debug("Preparing MPV socket", "socketPath", socketPath)
-	_ = os.Remove(socketPath)
+	_ = os.Remove(c.socketPath)
 
 	cmd := exec.Command("mpv",
 		"--idle=yes",
@@ -35,50 +35,41 @@ func StartMPV(socketPath string) (*Client, error) {
 		"--input-default-bindings=no",
 		"--input-terminal=no",
 		"--terminal=no",
-		"--input-ipc-server="+socketPath,
+		"--input-ipc-server="+c.socketPath,
 	)
 
-	if err := cmd.Start(); err != nil {
-		logger.Error("Failed to spawn mpv process", "err", err)
-		return nil, fmt.Errorf("failed to start mpv: %w", err)
+	cmd.SysProcAttr = &syscall.SysProcAttr{
+		Pdeathsig: syscall.SIGTERM,
 	}
 
-	var conn net.Conn
-	var err error
-	for i := 0; i < 20; i++ {
-		conn, err = net.Dial("unix", socketPath)
-		if err == nil {
-			break
-		}
-		time.Sleep(50 * time.Millisecond)
-	}
+	err := cmd.Start()
 	if err != nil {
-		logger.Error("Cannot connect to mpv socket", "socketPath", socketPath, "err", err)
-		return nil, fmt.Errorf("cannot connect to mpv socket: %w", err)
+		return fmt.Errorf("failed to start mpv: %w", err)
 	}
 
-	client := &Client{
-		conn:       conn,
-		reader:     bufio.NewReader(conn),
-		socketPath: socketPath,
+	for i := range 20 {
+		conn, err := net.Dial("unix", c.socketPath)
+		if err != nil {
+			logger.Warn("Failed to connect, retrying...", "attempt", i+1, "err", err)
+			time.Sleep(50 * time.Millisecond)
+			continue
+		}
+		c.conn = conn
+		c.reader = bufio.NewReader(conn)
+		logger.Info("Connected to mpv", "attempt", i+1)
+		break
 	}
 
-	logger.Info("Connected to MPV IPC socket", "socketPath", socketPath)
+	go c.listenLoop()
+	c.ObserveProperty(1, "time-pos")
+	c.ObserveProperty(2, "pause")
 
-	go client.listenLoop()
-
-	// Observe fundamental playback properties
-	_ = client.ObserveProperty(1, "time-pos")
-	_ = client.ObserveProperty(2, "pause")
-	_ = client.ObserveProperty(3, "eof-reached")
-
-	return client, nil
+	return nil
 }
 
-// SendCommand sends a JSON array command to mpv over the socket
-func (c *Client) SendCommand(args ...interface{}) error {
+func (c *Client) SendCommand(args ...any) error {
 	id := c.reqID.Add(1)
-	req := map[string]interface{}{
+	req := map[string]any{
 		"command":    args,
 		"request_id": id,
 	}
@@ -95,8 +86,18 @@ func (c *Client) SendCommand(args ...interface{}) error {
 }
 
 func (c *Client) PlayFile(path string) error {
-	logger.Info("Playing track", "path", path)
+	logger.Debug("Playing track", "path", path)
 	return c.SendCommand("loadfile", path, "replace")
+}
+
+func (c *Client) Play() error {
+	logger.Debug("Play")
+	return c.SendCommand("set-property", "pause", true)
+}
+
+func (c *Client) Pause() error {
+	logger.Debug("Pause")
+	return c.SendCommand("set-property", "pause", false)
 }
 
 func (c *Client) TogglePause() error {
@@ -128,9 +129,10 @@ func (c *Client) listenLoop() {
 		}
 
 		var event struct {
-			Event string      `json:"event"`
-			Name  string      `json:"name"`
-			Data  interface{} `json:"data"`
+			Event  string `json:"event"`
+			Name   string `json:"name"`
+			Data   any    `json:"data"`
+			Reason string `json:"reason"`
 		}
 		if err := json.Unmarshal(line, &event); err != nil {
 			continue
@@ -155,7 +157,7 @@ func (c *Client) listenLoop() {
 		} else if event.Event == "end-file" && c.OnTrackEnd != nil {
 			logger.Info("Track finished playing")
 			coreglib.IdleAdd(func() {
-				c.OnTrackEnd()
+				c.OnTrackEnd(event.Reason)
 			})
 		}
 	}

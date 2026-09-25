@@ -47,7 +47,7 @@ type Client struct {
 
 	OnTimePos  func(pos float64)
 	OnPause    func(paused bool)
-	OnTrackEnd func()
+	OnTrackEnd func(reason string)
 }
 
 type RepeatMode int
@@ -79,4 +79,3 @@ const (
 	QueueChange
 	OnTrackChange
 )
-

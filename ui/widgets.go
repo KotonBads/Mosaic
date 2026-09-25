@@ -27,6 +27,7 @@ func PlayerControls(p *player.Player) gtk.Widgetter {
 	controls_box := gtk.NewBox(gtk.OrientationHorizontal, 12)
 	seek_box := gtk.NewBox(gtk.OrientationHorizontal, 4)
 	final_box := gtk.NewBox(gtk.OrientationVertical, 4)
+	is_dragging := false
 
 	play_pause := gtk.NewButtonFromIconName("media-playback-pause-symbolic")
 	previous := gtk.NewButtonFromIconName("media-skip-backward-symbolic")
@@ -90,19 +91,54 @@ func PlayerControls(p *player.Player) gtk.Widgetter {
 	}
 
 	if p != nil {
+		click := gtk.NewGestureClick()
+
+		// this is a workaround to have release events
+		// for the seek bar
+		// https://gitlab.gnome.org/GNOME/gtk/-/work_items/4939#note_1680234
+		seek_controllers := seek_bar.ObserveControllers()
+		for i := range seek_controllers.NItems() {
+			g, ok := seek_controllers.Item(i).Cast().(*gtk.GestureClick)
+			if ok && g != nil {
+				click = g
+				break
+			}
+		}
+
 		play_pause.ConnectClicked(p.PlayPause)
 		repeat.ConnectClicked(p.SetRepeat)
 		shuffle.ConnectClicked(p.SetShuffle)
 		next.ConnectClicked(p.Next)
 		previous.ConnectClicked(p.Prev)
-		seek_bar.ConnectValueChanged(func() {
-			if len(p.Queue) == 0 || p.CurrentIdx < 0 || p.CurrentIdx >= len(p.Queue) {
+
+		seek_bar.ConnectChangeValue(func(scroll gtk.ScrollType, value float64) (ok bool) {
+			track := p.Queue[p.CurrentIdx]
+			ratio := value / 100
+			pos_cur.SetText(format_time(time.Duration(ratio * float64(track.Duration))))
+			return false
+		})
+		click.ConnectPressed(func(nPress int, x, y float64) {
+			logger.Info("pressed, n press", "n", nPress)
+			is_dragging = true
+		})
+		click.ConnectReleased(func(nPress int, x, y float64) {
+			logger.Info("released, n press", "n", nPress)
+
+			track := p.Queue[p.CurrentIdx]
+			ratio := seek_bar.Value() / 100
+			p.Seek(time.Duration(ratio * float64(track.Duration)))
+			is_dragging = false
+		})
+		p.MPV.OnTimePos = func(pos float64) {
+			if is_dragging {
+				logger.Info("ignoring time pos", "pos", pos)
 				return
 			}
 			track := p.Queue[p.CurrentIdx]
-			ratio := seek_bar.Value() / 100.0
-			p.Seek(time.Duration(ratio * float64(track.Duration)))
-		})
+			p.Pos = time.Duration(pos * float64(time.Second))
+			seek_bar.SetValue(float64(pos) * 100 / track.Duration.Seconds())
+			glib.IdleAdd(refresh)
+		}
 
 		p.Subscribe(player.ControlChange, refresh)
 	}
@@ -194,6 +230,7 @@ func Queue(p *player.Player, onChange func(track player.Track)) gtk.Widgetter {
 
 	list_view.ConnectActivate(func(pos uint) {
 		curr_track := p.Queue[pos]
+		p.CurrentIdx = int(pos)
 		onChange(curr_track)
 	})
 

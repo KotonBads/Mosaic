@@ -78,16 +78,13 @@ func App() {
 	library.Player.SortAlphabetically()
 	library.Player.CurrentIdx = 0
 
-	app := NewWindow(func(win *adw.ApplicationWindow) {
-		logger.Info("Prefetching album art")
-		go func() {
-			for _, track := range library.Tracks {
-				GetAlbumArt(track)
-				GetAlbumThumb(track)
-			}
-			logger.Info("Prefetching complete")
-		}()
+	library.Player.MPV = &player.Client{}
+	err = library.Player.MPV.Init()
+	if err != nil {
+		logger.Error("Failed to init MPV client", "err", err)
+	}
 
+	app := NewWindow(func(win *adw.ApplicationWindow) {
 		logger.Info("Building Libadwaita OverlaySplitView responsive layout")
 
 		split_view := adw.NewOverlaySplitView()
@@ -106,6 +103,10 @@ func App() {
 			})
 			player_area := gtk.NewBox(gtk.OrientationVertical, 40)
 			player_area.SetVAlign(gtk.AlignCenter)
+			player_area.SetMarginStart(24)
+			player_area.SetMarginEnd(24)
+			player_area.SetMarginTop(24)
+			player_area.SetMarginBottom(24)
 
 			album_art := gtk.NewAspectFrame(0.5, 0.5, 1.0, false)
 			album_art.SetOverflow(gtk.OverflowHidden)
@@ -149,7 +150,10 @@ func App() {
 		}
 
 		queue_refresh := func() {
-			queue := Queue(library.Player, player_refresh)
+			queue := Queue(library.Player, func(track player.Track) {
+				library.Player.PlayTrack(library.Player.CurrentIdx)
+				player_refresh(track)
+			})
 			split_view.SetSidebar(queue)
 		}
 
@@ -157,6 +161,12 @@ func App() {
 		logger.Info("Setting player screen to song index: ", "index", library.Player.CurrentIdx)
 		player_refresh(library.Player.Queue[library.Player.CurrentIdx])
 
+		library.Player.MPV.OnTrackEnd = func(reason string) {
+			if reason == "stop" {
+				return
+			}
+			library.Player.Next()
+		}
 		library.Player.Subscribe(player.OnTrackChange, player_refresh)
 
 		win.SetContent(split_view)
@@ -168,5 +178,6 @@ func App() {
 	} else {
 		logger.Info("Mosaic shutdown gracefully")
 	}
+	library.Player.MPV.Close()
 	os.Exit(exitCode)
 }

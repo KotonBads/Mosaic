@@ -30,6 +30,24 @@ func (p *Player) Subscribe(event PlayerEvents, f any) {
 	}
 }
 
+func (p *Player) Play() {
+	logger.Debug("Play")
+	p.Paused = false
+	if p.MPV != nil {
+		_ = p.MPV.Play()
+	}
+	p.notify()
+}
+
+func (p *Player) Pause() {
+	logger.Debug("Pause")
+	p.Paused = true
+	if p.MPV != nil {
+		_ = p.MPV.Pause()
+	}
+	p.notify()
+}
+
 func (p *Player) PlayPause() {
 	logger.Debug("Play/Pause", "state", p.Paused)
 	p.Paused = !p.Paused
@@ -46,7 +64,7 @@ func (p *Player) SetRepeat() {
 }
 
 func (p *Player) SetShuffle() {
-	logger.Info("Set shuffle", "state", p.Shuffle)
+	logger.Debug("Set shuffle", "state", p.Shuffle)
 	p.Shuffle = !p.Shuffle
 	if p.Shuffle {
 		p.ShuffleQueue()
@@ -67,6 +85,7 @@ func (p *Player) PlayTrack(idx int) {
 	track := p.Queue[idx]
 	p.CurrentIdx = idx
 	p.Pos = 0
+	p.SetVolume(20)
 	if p.MPV != nil {
 		_ = p.MPV.PlayFile(p.Queue[idx].Path)
 	}
@@ -115,7 +134,7 @@ func (p *Player) Prev() {
 }
 
 func (p *Player) Seek(t time.Duration) {
-	logger.Info("Seek", "pos", t)
+	logger.Debug("Seek", "pos", t)
 	p.Pos = t
 	if p.MPV != nil {
 		_ = p.MPV.Seek(t.Seconds())
