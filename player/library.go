@@ -249,8 +249,8 @@ func firstTag(values []string, fallback string) string {
 	for _, v := range values {
 		v = strings.TrimSpace(v)
 		if v != "" {
-			return sanitize_name(v)
+			return v
 		}
 	}
-	return sanitize_name(fallback)
+	return fallback
 }
