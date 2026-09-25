@@ -56,8 +56,6 @@ func PlayerControls(p *player.Player) gtk.Widgetter {
 	final_box.Append(seek_box)
 	final_box.Append(controls_box)
 
-	var updatingUI bool
-
 	refresh := func() {
 		if p == nil {
 			return
@@ -98,9 +96,6 @@ func PlayerControls(p *player.Player) gtk.Widgetter {
 		next.ConnectClicked(p.Next)
 		previous.ConnectClicked(p.Prev)
 		seek_bar.ConnectValueChanged(func() {
-			if updatingUI {
-				return
-			}
 			if len(p.Queue) == 0 || p.CurrentIdx < 0 || p.CurrentIdx >= len(p.Queue) {
 				return
 			}
