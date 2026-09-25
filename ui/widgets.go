@@ -287,7 +287,15 @@ func Queue(p *player.Player, onChange func(track player.Track)) gtk.Widgetter {
 	return scrollable
 }
 
-func Lyrics(p *player.Player) gtk.Widgetter {
+func Lyrics(p *player.Player) *gtk.Box {
+	box := gtk.NewBox(gtk.OrientationVertical, 0)
+	box.AddCSSClass("lyrics-card")
+	box.SetSizeRequest(450, 450)
+	box.SetHExpand(false)
+	box.SetVExpand(false)
+	box.SetHAlign(gtk.AlignCenter)
+	box.SetVAlign(gtk.AlignCenter)
+
 	cache_dir, _ := os.UserCacheDir()
 	client := lyrics.New(lyrics.Options{
 		CacheDir: filepath.Join(cache_dir, "mosaic", "lyrics"),
@@ -305,11 +313,29 @@ func Lyrics(p *player.Player) gtk.Widgetter {
 		Duration: track.Duration,
 	}
 	result, err := client.Lookup(context.TODO(), request)
-	if err != nil {
-		return gtk.NewLabel("lyrics")
+	if err != nil || result == nil || result.Lyrics.Plain == "" {
+		fallback := gtk.NewLabel("No lyrics found")
+		fallback.AddCSSClass("dim-label")
+		fallback.SetHAlign(gtk.AlignCenter)
+		fallback.SetVAlign(gtk.AlignCenter)
+		fallback.SetHExpand(true)
+		fallback.SetVExpand(true)
+		box.Append(fallback)
+		return box
 	}
 
-	scrolled := gtk.NewScrolledWindow()
-	scrolled.SetChild(gtk.NewLabel(result.Lyrics.Plain))
-	return scrolled
+	lyricsLabel := gtk.NewLabel(result.Lyrics.Plain)
+	lyricsLabel.SetWrap(true)
+	lyricsLabel.SetJustify(gtk.JustifyCenter)
+	lyricsLabel.SetMarginStart(20)
+	lyricsLabel.SetMarginEnd(20)
+	lyricsLabel.SetMarginTop(20)
+	lyricsLabel.SetMarginBottom(20)
+
+	scrollable := gtk.NewScrolledWindow()
+	scrollable.SetHExpand(true)
+	scrollable.SetVExpand(true)
+	scrollable.SetChild(lyricsLabel)
+	box.Append(scrollable)
+	return box
 }

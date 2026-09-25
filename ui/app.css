@@ -21,8 +21,42 @@ frame.album-art {
 
 .album-art {
     border-radius: 16px;
+    transition: opacity 300ms ease;
+}
+
+.album-art-active {
+    opacity: 1.0;
+}
+
+.album-art-hidden {
+    opacity: 0.0;
+}
+
+.lyrics-card {
+    background-color: alpha(@theme_base_color, 0.72);
+    backdrop-filter: blur(24px);
+    border-radius: 20px;
+    border: 1px solid alpha(white, 0.12);
+    box-shadow: 0 16px 40px alpha(black, 0.45), 0 2px 8px alpha(black, 0.25);
 }
 
 .queue-item {
     border-radius: 12px;
+}
+
+/* Ambient Background Styling - No live CSS blur filter to ensure 60fps window resizes */
+.ambient-bg {
+    filter: brightness(0.35) saturate(1.4);
+    opacity: 0.85;
+}
+
+.ambient-overlay {
+    background-color: transparent;
+}
+
+/* Frosted glass effect for sidebar */
+.sidebar,
+list.sidebar {
+    background-color: alpha(@theme_bg_color, 0.65);
+    backdrop-filter: blur(16px);
 }
