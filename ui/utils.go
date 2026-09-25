@@ -99,7 +99,7 @@ func GetAlbumArt(track player.Track) (*gtk.Picture, error) {
 	// sanitize everything
 	// thanks fall out boy
 	artists := sanitize_name(join_artist_name(track.Artists))
-	art_path := fmt.Sprintf("%s/%s - %s.png", art_dir, artists, sanitize_name(track.Album))
+	art_path := fmt.Sprintf("%s/%s - %s.png", art_dir, artists, sanitize_name(track.Album.Title))
 
 	_, err = os.Stat(art_path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -141,7 +141,7 @@ func GetAlbumThumb(track player.Track) (*gtk.Picture, error) {
 	}
 
 	artists := sanitize_name(join_artist_name(track.Artists))
-	thumb_path := fmt.Sprintf("%s/%s - %s.png", thumb_dir, artists, sanitize_name(track.Album))
+	thumb_path := fmt.Sprintf("%s/%s - %s.png", thumb_dir, artists, sanitize_name(track.Album.Title))
 
 	_, err = os.Stat(thumb_path)
 	if errors.Is(err, os.ErrNotExist) {

@@ -7,6 +7,9 @@ import (
 	"sync/atomic"
 	"time"
 
+	"github.com/quarckster/go-mpris-server/pkg/events"
+	"github.com/quarckster/go-mpris-server/pkg/server"
+
 	_ "modernc.org/sqlite"
 )
 
@@ -35,7 +38,7 @@ type Track struct {
 	Path     string
 	Title    string
 	Artists  []Artist
-	Album    string
+	Album    Album
 	Duration time.Duration
 }
 
@@ -67,6 +70,7 @@ type Player struct {
 	Repeat        RepeatMode
 	Volume        int
 	MPV           *Client
+	MPRIS         *MPRIS
 	ControlChange []func()
 	QueueChange   []func()
 	OnTrackChange []func(Track)
@@ -79,3 +83,9 @@ const (
 	QueueChange
 	OnTrackChange
 )
+
+type MPRIS struct {
+	player *Player
+	server *server.Server
+	events *events.EventHandler
+}

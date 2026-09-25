@@ -84,6 +84,9 @@ func App() {
 		logger.Error("Failed to init MPV client", "err", err)
 	}
 
+	library.Player.MPRIS = &player.MPRIS{}
+	library.Player.MPRIS.Init(library.Player)
+
 	app := NewWindow(func(win *adw.ApplicationWindow) {
 		logger.Info("Building Libadwaita OverlaySplitView responsive layout")
 

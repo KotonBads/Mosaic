@@ -156,17 +156,15 @@ func (lib *Library) Load() error {
 			Path:     filePath,
 			Title:    title,
 			Artists:  trackArtists,
-			Album:    albumTitle,
 			Duration: time.Duration(durationSec) * time.Second,
 		}
 		tracks = append(tracks, track)
 
-		// Group into Album
 		album, exists := albumMap[albumTitle]
 		if !exists {
 			var year time.Time
 			if dateStr != "" {
-				year, _ = time.Parse(time.RFC3339, dateStr)
+				year = parseDate(dateStr)
 			}
 			album = &Album{
 				Title: albumTitle,
