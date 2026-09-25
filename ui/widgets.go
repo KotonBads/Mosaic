@@ -174,8 +174,10 @@ func QueueElement(track player.Track) gtk.Widgetter {
 func Queue(p *player.Player, onChange func(track player.Track)) gtk.Widgetter {
 	var list *gtk.ListBox
 
+	// todo: implement listview
 	refresh_idx := func(_ player.Track) {
-		list.SelectRow(list.RowAtIndex(p.CurrentIdx))
+		row := list.RowAtIndex(p.CurrentIdx)
+		list.SelectRow(row)
 	}
 
 	refresh := func() {
