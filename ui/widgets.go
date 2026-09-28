@@ -34,6 +34,7 @@ func PlayerControls(p *player.Player) gtk.Widgetter {
 	vol_box := gtk.NewBox(gtk.OrientationHorizontal, 4)
 	final_box := gtk.NewBox(gtk.OrientationVertical, 4)
 	is_scrubbing := false
+	is_changing_vol := false
 
 	play_pause := gtk.NewButtonFromIconName("media-playback-pause-symbolic")
 	previous := gtk.NewButtonFromIconName("media-skip-backward-symbolic")
@@ -109,14 +110,17 @@ func PlayerControls(p *player.Player) gtk.Widgetter {
 			repeat.AddCSSClass("dim-label")
 		}
 
-		vol_cur.SetText(fmt.Sprint(p.Volume))
-		volume.SetValue(float64(p.Volume))
+		if !is_changing_vol {
+			vol_cur.SetText(fmt.Sprint(p.Volume))
+			volume.SetValue(float64(p.Volume))
+		}
 		pos_cur.SetText(format_time(p.Pos))
 		pos_max.SetText(format_time(p.Queue[p.CurrentIdx].Duration))
 	}
 
 	if p != nil {
-		click := gtk.NewGestureClick()
+		seek_click := gtk.NewGestureClick()
+		vol_click := gtk.NewGestureClick()
 
 		// this is a workaround to have release events
 		// for the seek bar
@@ -125,7 +129,16 @@ func PlayerControls(p *player.Player) gtk.Widgetter {
 		for i := range seek_controllers.NItems() {
 			g, ok := seek_controllers.Item(i).Cast().(*gtk.GestureClick)
 			if ok && g != nil {
-				click = g
+				seek_click = g
+				break
+			}
+		}
+
+		vol_controllers := volume.ObserveControllers()
+		for i := range vol_controllers.NItems() {
+			g, ok := vol_controllers.Item(i).Cast().(*gtk.GestureClick)
+			if ok && g != nil {
+				vol_click = g
 				break
 			}
 		}
@@ -142,11 +155,11 @@ func PlayerControls(p *player.Player) gtk.Widgetter {
 			pos_cur.SetText(format_time(time.Duration(ratio * float64(track.Duration))))
 			return false
 		})
-		click.ConnectPressed(func(nPress int, x, y float64) {
+		seek_click.ConnectPressed(func(nPress int, x, y float64) {
 			logger.Info("pressed, n press", "n", nPress)
 			is_scrubbing = true
 		})
-		click.ConnectReleased(func(nPress int, x, y float64) {
+		seek_click.ConnectReleased(func(nPress int, x, y float64) {
 			logger.Info("released, n press", "n", nPress)
 
 			track := p.Queue[p.CurrentIdx]
@@ -154,6 +167,24 @@ func PlayerControls(p *player.Player) gtk.Widgetter {
 			p.Seek(time.Duration(ratio * float64(track.Duration)))
 			is_scrubbing = false
 		})
+
+		volume.ConnectChangeValue(func(scroll gtk.ScrollType, value float64) (ok bool) {
+			is_changing_vol = true
+			int_val := int(value)
+			p.SetVolume(int_val)
+			vol_cur.SetText(fmt.Sprint(int_val))
+			return false
+		})
+
+		vol_click.ConnectPressed(func(nPress int, x, y float64) {
+			is_changing_vol = true
+		})
+		vol_click.ConnectReleased(func(nPress int, x, y float64) {
+			is_changing_vol = false
+			volume.SetValue(float64(p.Volume))
+			vol_cur.SetText(fmt.Sprint(p.Volume))
+		})
+
 		p.MPV.OnTimePos = func(pos float64) {
 			if is_scrubbing {
 				logger.Info("ignoring time pos", "pos", pos)
@@ -164,11 +195,6 @@ func PlayerControls(p *player.Player) gtk.Widgetter {
 			seek_bar.SetValue(float64(pos) * 100 / track.Duration.Seconds())
 			glib.IdleAdd(refresh)
 		}
-
-		volume.ConnectValueChanged(func() {
-			p.SetVolume(int(volume.Value()))
-			vol_cur.SetText(fmt.Sprint(int(volume.Value())))
-		})
 
 		p.Subscribe(player.ControlChange, refresh)
 	}
