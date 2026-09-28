@@ -35,6 +35,7 @@ func (c *Client) Init() error {
 		"--input-default-bindings=no",
 		"--input-terminal=no",
 		"--terminal=no",
+		"--audio-format=float",
 		"--input-ipc-server="+c.socketPath,
 	)
 
