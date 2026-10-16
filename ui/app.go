@@ -80,18 +80,19 @@ func App() {
 	library.Player = &player.Player{
 		Queue: library.Tracks,
 	}
+	p := library.Player
 
-	library.Player.SortAlphabetically()
-	library.Player.CurrentIdx = 0
+	p.SortAlphabetically()
+	p.CurrentIdx = 0
 
-	library.Player.MPV = &player.Client{}
-	err = library.Player.MPV.Init()
+	p.MPV = &player.Client{}
+	err = p.MPV.Init()
 	if err != nil {
 		logger.Error("Failed to init MPV client", "err", err)
 	}
 
-	library.Player.MPRIS = &player.MPRIS{}
-	library.Player.MPRIS.Init(library.Player)
+	p.MPRIS = &player.MPRIS{}
+	p.MPRIS.Init(p)
 
 	logger.Info("Prefetching lyrics")
 	go func() {
@@ -100,7 +101,7 @@ func App() {
 			CacheDir: filepath.Join(cache_dir, "mosaic", "lyrics"),
 		})
 		var wg sync.WaitGroup
-		for _, track := range library.Player.Queue {
+		for _, track := range p.Queue {
 			go func() {
 				wg.Add(1)
 				artists := make([]string, len(track.Artists))
@@ -151,7 +152,7 @@ func App() {
 		breakpoint.AddSetter(split_view, "collapsed", true)
 
 		player_refresh := func(track player.Track) {
-			library.Player.CurrentIdx = slices.IndexFunc(library.Player.Queue, func(found player.Track) bool {
+			p.CurrentIdx = slices.IndexFunc(p.Queue, func(found player.Track) bool {
 				if found.ID == track.ID {
 					return true
 				}
@@ -192,7 +193,7 @@ func App() {
 			art_clamped.SetMaximumSize(320)
 			player_area.Append(art_clamped)
 
-			lyrics := Lyrics(library.Player)
+			lyrics := Lyrics(p)
 
 			lyrics_revealer := gtk.NewRevealer()
 			lyrics_revealer.SetTransitionType(gtk.RevealerTransitionTypeCrossfade)
@@ -245,7 +246,7 @@ func App() {
 
 			player_area.Append(song_info)
 
-			controls := PlayerControls(library.Player)
+			controls := PlayerControls(p)
 			controls_clamped := adw.NewClamp()
 			controls_clamped.SetChild(controls)
 			controls_clamped.SetMaximumSize(420)
@@ -256,26 +257,26 @@ func App() {
 		}
 
 		queue_refresh := func() {
-			queue := Queue(library.Player, func(track player.Track) {
-				library.Player.PlayTrack(library.Player.CurrentIdx)
+			queue := Queue(p, func(track player.Track) {
+				p.PlayTrack(p.CurrentIdx)
 				player_refresh(track)
 			})
 			split_view.SetSidebar(queue)
 		}
 
 		queue_refresh()
-		logger.Info("Setting player screen to song index: ", "index", library.Player.CurrentIdx)
-		player_refresh(library.Player.Queue[library.Player.CurrentIdx])
-		library.Player.SetVolume(20)
-		library.Player.Notify()
+		logger.Info("Setting player screen to song index: ", "index", p.CurrentIdx)
+		player_refresh(p.Queue[p.CurrentIdx])
+		p.SetVolume(20)
+		p.Notify()
 
-		library.Player.MPV.OnTrackEnd = func(reason string) {
+		p.MPV.OnTrackEnd = func(reason string) {
 			if reason == "stop" {
 				return
 			}
-			library.Player.Next()
+			p.Next()
 		}
-		library.Player.Subscribe(player.OnTrackChange, player_refresh)
+		p.Subscribe(player.OnTrackChange, player_refresh)
 
 		win.SetContent(root_overlay)
 		win.AddBreakpoint(breakpoint)
@@ -287,6 +288,6 @@ func App() {
 	} else {
 		logger.Info("Mosaic shutdown gracefully")
 	}
-	library.Player.MPV.Close()
+	p.MPV.Close()
 	os.Exit(exitCode)
 }
