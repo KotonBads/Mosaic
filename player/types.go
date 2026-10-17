@@ -63,17 +63,21 @@ const (
 
 type Player struct {
 	Pos           time.Duration
+	LastPosUpdate time.Time
 	Queue         []Track
 	CurrentIdx    int
 	Paused        bool
 	Shuffle       bool
 	Repeat        RepeatMode
 	Volume        int
+	Muted         bool
+	PreMuteVolume int
 	MPV           *Client
 	MPRIS         *MPRIS
 	ControlChange []func()
 	QueueChange   []func()
 	OnTrackChange []func(Track)
+	OnPosChange   []func(time.Duration)
 }
 
 type PlayerEvents int
@@ -82,6 +86,7 @@ const (
 	ControlChange PlayerEvents = iota
 	QueueChange
 	OnTrackChange
+	PosChange
 )
 
 type MPRIS struct {
