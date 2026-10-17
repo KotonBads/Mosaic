@@ -1,14 +1,10 @@
 package ui
 
 import (
-	"context"
 	"fmt"
-	"os"
-	"path/filepath"
 	"strings"
 	"time"
 
-	"github.com/AvengeMedia/dankgo/lyrics"
 	"github.com/KotonBads/mosaic/player"
 	"github.com/diamondburned/gotk4/pkg/core/glib"
 	"github.com/diamondburned/gotk4/pkg/gtk/v4"
@@ -28,31 +24,98 @@ func AlbumArt(track player.Track) (*gtk.Picture, error) {
 	return picture, nil
 }
 
+func volumeIconName(vol int) string {
+	switch {
+	case vol <= 0:
+		return "audio-volume-muted-symbolic"
+	case vol < 34:
+		return "audio-volume-low-symbolic"
+	case vol < 67:
+		return "audio-volume-medium-symbolic"
+	default:
+		return "audio-volume-high-symbolic"
+	}
+}
+
 func PlayerControls(p *player.Player) gtk.Widgetter {
-	controls_box := gtk.NewBox(gtk.OrientationHorizontal, 12)
-	seek_box := gtk.NewBox(gtk.OrientationHorizontal, 4)
-	vol_box := gtk.NewBox(gtk.OrientationHorizontal, 4)
-	final_box := gtk.NewBox(gtk.OrientationVertical, 4)
+	controls_box := gtk.NewBox(gtk.OrientationHorizontal, 16)
+	controls_box.AddCSSClass("transport-row")
+	controls_box.SetMarginTop(6)
+	controls_box.SetMarginBottom(6)
+
+	seek_box := gtk.NewBox(gtk.OrientationHorizontal, 10)
+	seek_box.AddCSSClass("seek-row")
+
+	vol_box := gtk.NewBox(gtk.OrientationHorizontal, 10)
+	vol_box.AddCSSClass("volume-row")
+
+	final_box := gtk.NewBox(gtk.OrientationVertical, 8)
+	final_box.AddCSSClass("player-controls")
+
 	is_scrubbing := false
 	is_changing_vol := false
 
 	play_pause := gtk.NewButtonFromIconName("media-playback-pause-symbolic")
+	play_pause.AddCSSClass("play-pause-btn")
+	play_pause.AddCSSClass("circular")
+	play_pause.SetCursorFromName("pointer")
+
 	previous := gtk.NewButtonFromIconName("media-skip-backward-symbolic")
+	previous.AddCSSClass("transport-btn")
+	previous.AddCSSClass("flat")
+	previous.AddCSSClass("circular")
+	previous.SetCursorFromName("pointer")
+
 	next := gtk.NewButtonFromIconName("media-skip-forward-symbolic")
+	next.AddCSSClass("transport-btn")
+	next.AddCSSClass("flat")
+	next.AddCSSClass("circular")
+	next.SetCursorFromName("pointer")
+
 	shuffle := gtk.NewButtonFromIconName("media-playlist-shuffle-symbolic")
+	shuffle.AddCSSClass("mode-btn")
+	shuffle.AddCSSClass("flat")
+	shuffle.AddCSSClass("circular")
+	shuffle.SetCursorFromName("pointer")
+
 	repeat := gtk.NewButtonFromIconName("media-playlist-repeat-symbolic")
+	repeat.AddCSSClass("mode-btn")
+	repeat.AddCSSClass("flat")
+	repeat.AddCSSClass("circular")
+	repeat.SetCursorFromName("pointer")
+
 	seek_bar := gtk.NewScaleWithRange(gtk.OrientationHorizontal, 0, 100, 1)
+	seek_bar.AddCSSClass("seek-bar")
+	seek_bar.SetCursorFromName("pointer")
+
 	pos_cur := gtk.NewLabel(format_time(p.Pos))
+	pos_cur.AddCSSClass("time-label")
 	pos_cur.AddCSSClass("numeric")
+	pos_cur.SetWidthChars(5)
+	pos_cur.SetXAlign(0)
+
 	pos_max := gtk.NewLabel(format_time(p.Queue[p.CurrentIdx].Duration))
+	pos_max.AddCSSClass("time-label")
 	pos_max.AddCSSClass("numeric")
+	pos_max.SetWidthChars(5)
+	pos_max.SetXAlign(1)
+
+	vol_icon := gtk.NewButtonFromIconName(volumeIconName(p.Volume))
+	vol_icon.AddCSSClass("volume-icon")
+	vol_icon.AddCSSClass("flat")
+	vol_icon.AddCSSClass("circular")
+	vol_icon.SetCursorFromName("pointer")
+	vol_icon.SetTooltipText("Toggle Mute")
+
 	volume := gtk.NewScaleWithRange(gtk.OrientationHorizontal, 0, 100, 1)
+	volume.AddCSSClass("volume-bar")
+	volume.SetCursorFromName("pointer")
+
 	vol_cur := gtk.NewLabel(fmt.Sprint(p.Volume))
+	vol_cur.AddCSSClass("time-label")
 	vol_cur.AddCSSClass("numeric")
 	vol_cur.SetWidthChars(3)
-	vol_max := gtk.NewLabel("100")
-	vol_max.AddCSSClass("numeric")
-	vol_max.SetWidthChars(3)
+	vol_cur.SetXAlign(1)
 
 	controls_box.SetHAlign(gtk.AlignCenter)
 	seek_box.SetHAlign(gtk.AlignFill)
@@ -66,6 +129,10 @@ func PlayerControls(p *player.Player) gtk.Widgetter {
 	final_box.SetHAlign(gtk.AlignFill)
 	final_box.SetHExpand(true)
 
+	if p.Queue[p.CurrentIdx].Duration > 0 {
+		seek_bar.SetValue(p.Pos.Seconds() * 100 / p.Queue[p.CurrentIdx].Duration.Seconds())
+	}
+
 	controls_box.Append(shuffle)
 	controls_box.Append(previous)
 	controls_box.Append(play_pause)
@@ -74,9 +141,9 @@ func PlayerControls(p *player.Player) gtk.Widgetter {
 	seek_box.Append(pos_cur)
 	seek_box.Append(seek_bar)
 	seek_box.Append(pos_max)
-	vol_box.Append(vol_cur)
+	vol_box.Append(vol_icon)
 	vol_box.Append(volume)
-	vol_box.Append(vol_max)
+	vol_box.Append(vol_cur)
 	final_box.Append(seek_box)
 	final_box.Append(controls_box)
 	final_box.Append(vol_box)
@@ -94,26 +161,32 @@ func PlayerControls(p *player.Player) gtk.Widgetter {
 		if p.Shuffle {
 			shuffle.SetIconName("media-playlist-shuffle-symbolic")
 			shuffle.RemoveCSSClass("dim-label")
+			shuffle.AddCSSClass("mode-active")
 		} else {
 			shuffle.SetIconName("media-playlist-shuffle-symbolic")
 			shuffle.AddCSSClass("dim-label")
+			shuffle.RemoveCSSClass("mode-active")
 		}
 
 		if p.Repeat == player.RepeatOne {
 			repeat.SetIconName("media-playlist-repeat-song-symbolic")
 			repeat.RemoveCSSClass("dim-label")
+			repeat.AddCSSClass("mode-active")
 		} else if p.Repeat == player.RepeatQueue {
 			repeat.SetIconName("media-playlist-repeat-symbolic")
 			repeat.RemoveCSSClass("dim-label")
+			repeat.AddCSSClass("mode-active")
 		} else {
 			repeat.SetIconName("media-playlist-repeat-symbolic")
 			repeat.AddCSSClass("dim-label")
+			repeat.RemoveCSSClass("mode-active")
 		}
 
 		if !is_changing_vol {
 			vol_cur.SetText(fmt.Sprint(p.Volume))
 			volume.SetValue(float64(p.Volume))
 		}
+		vol_icon.SetIconName(volumeIconName(p.Volume))
 		pos_cur.SetText(format_time(p.Pos))
 		pos_max.SetText(format_time(p.Queue[p.CurrentIdx].Duration))
 	}
@@ -148,6 +221,7 @@ func PlayerControls(p *player.Player) gtk.Widgetter {
 		shuffle.ConnectClicked(p.SetShuffle)
 		next.ConnectClicked(p.Next)
 		previous.ConnectClicked(p.Prev)
+		vol_icon.ConnectClicked(p.ToggleMute)
 
 		seek_bar.ConnectChangeValue(func(scroll gtk.ScrollType, value float64) (ok bool) {
 			track := p.Queue[p.CurrentIdx]
@@ -170,9 +244,10 @@ func PlayerControls(p *player.Player) gtk.Widgetter {
 
 		volume.ConnectChangeValue(func(scroll gtk.ScrollType, value float64) (ok bool) {
 			is_changing_vol = true
-			int_val := int(value)
+			int_val := max(0, min(100, int(value)))
 			p.SetVolume(int_val)
-			vol_cur.SetText(fmt.Sprint(int_val))
+			vol_cur.SetText(fmt.Sprint(p.Volume))
+			vol_icon.SetIconName(volumeIconName(p.Volume))
 			return false
 		})
 
@@ -183,18 +258,19 @@ func PlayerControls(p *player.Player) gtk.Widgetter {
 			is_changing_vol = false
 			volume.SetValue(float64(p.Volume))
 			vol_cur.SetText(fmt.Sprint(p.Volume))
+			vol_icon.SetIconName(volumeIconName(p.Volume))
 		})
 
-		p.MPV.OnTimePos = func(pos float64) {
+		p.Subscribe(player.PosChange, func(pos time.Duration) {
 			if is_scrubbing {
-				logger.Info("ignoring time pos", "pos", pos)
 				return
 			}
 			track := p.Queue[p.CurrentIdx]
-			p.Pos = time.Duration(pos * float64(time.Second))
-			seek_bar.SetValue(float64(pos) * 100 / track.Duration.Seconds())
-			glib.IdleAdd(refresh)
-		}
+			if track.Duration > 0 {
+				seek_bar.SetValue(pos.Seconds() * 100 / track.Duration.Seconds())
+			}
+			refresh()
+		})
 
 		p.Subscribe(player.ControlChange, refresh)
 	}
@@ -266,10 +342,16 @@ func Queue(p *player.Player, onChange func(track player.Track)) gtk.Widgetter {
 	}
 	model := gtk.NewStringList(indices)
 	selection := gtk.NewSingleSelection(model)
+	selection.SetAutoselect(false)
+	selection.SetCanUnselect(false)
+	if len(p.Queue) > 0 && p.CurrentIdx >= 0 && p.CurrentIdx < len(p.Queue) {
+		selection.SetSelected(uint(p.CurrentIdx))
+	}
 
 	factory := gtk.NewSignalListItemFactory()
 	factory.ConnectSetup(func(obj *glib.Object) {
 		list_item := obj.Cast().(*gtk.ListItem)
+		list_item.SetFocusable(false)
 		item := QueueElement(p.Queue[p.CurrentIdx])
 
 		list_item.SetChild(item)
@@ -283,16 +365,21 @@ func Queue(p *player.Player, onChange func(track player.Track)) gtk.Widgetter {
 
 	list_view := gtk.NewListView(selection, &factory.ListItemFactory)
 	list_view.SetSingleClickActivate(true)
+	list_view.SetCanFocus(false)
 
 	list_view.ConnectActivate(func(pos uint) {
 		curr_track := p.Queue[pos]
 		p.CurrentIdx = int(pos)
+		selection.SetSelected(pos)
 		onChange(curr_track)
 	})
 
 	select_refresh := func(_ player.Track) {
-		list_view.Model().SelectItem(uint(p.CurrentIdx), true)
-		list_view.ScrollTo(uint(p.CurrentIdx), gtk.ListScrollFocus, nil)
+		if len(p.Queue) == 0 || p.CurrentIdx < 0 || p.CurrentIdx >= len(p.Queue) {
+			return
+		}
+		selection.SetSelected(uint(p.CurrentIdx))
+		list_view.ScrollTo(uint(p.CurrentIdx), gtk.ListScrollSelect, nil)
 	}
 
 	queue_refresh := func() {
@@ -302,8 +389,10 @@ func Queue(p *player.Player, onChange func(track player.Track)) gtk.Widgetter {
 		}
 		model.Splice(0, uint(model.NItems()), indices)
 
-		list_view.Model().SelectItem(uint(p.CurrentIdx), true)
-		list_view.ScrollTo(uint(p.CurrentIdx), gtk.ListScrollFocus, nil)
+		if len(p.Queue) > 0 && p.CurrentIdx >= 0 && p.CurrentIdx < len(p.Queue) {
+			selection.SetSelected(uint(p.CurrentIdx))
+			list_view.ScrollTo(uint(p.CurrentIdx), gtk.ListScrollSelect, nil)
+		}
 	}
 	p.Subscribe(player.OnTrackChange, select_refresh)
 	p.Subscribe(player.QueueChange, queue_refresh)
@@ -311,57 +400,4 @@ func Queue(p *player.Player, onChange func(track player.Track)) gtk.Widgetter {
 	scrollable := gtk.NewScrolledWindow()
 	scrollable.SetChild(list_view)
 	return scrollable
-}
-
-func Lyrics(p *player.Player) *gtk.Box {
-	box := gtk.NewBox(gtk.OrientationVertical, 0)
-	box.AddCSSClass("lyrics-card")
-	box.SetSizeRequest(450, 450)
-	box.SetHExpand(false)
-	box.SetVExpand(false)
-	box.SetHAlign(gtk.AlignCenter)
-	box.SetVAlign(gtk.AlignCenter)
-
-	cache_dir, _ := os.UserCacheDir()
-	client := lyrics.New(lyrics.Options{
-		CacheDir: filepath.Join(cache_dir, "mosaic", "lyrics"),
-	})
-
-	track := p.Queue[p.CurrentIdx]
-	artists := make([]string, len(track.Artists))
-	for i, a := range track.Artists {
-		artists[i] = a.Name
-	}
-	request := lyrics.Request{
-		Title:    track.Title,
-		Artist:   strings.Join(artists, ", "),
-		Album:    track.Album.Title,
-		Duration: track.Duration,
-	}
-	result, err := client.Lookup(context.TODO(), request)
-	if err != nil || result == nil || result.Lyrics.Plain == "" {
-		fallback := gtk.NewLabel("No lyrics found")
-		fallback.AddCSSClass("dim-label")
-		fallback.SetHAlign(gtk.AlignCenter)
-		fallback.SetVAlign(gtk.AlignCenter)
-		fallback.SetHExpand(true)
-		fallback.SetVExpand(true)
-		box.Append(fallback)
-		return box
-	}
-
-	lyricsLabel := gtk.NewLabel(result.Lyrics.Plain)
-	lyricsLabel.SetWrap(true)
-	lyricsLabel.SetJustify(gtk.JustifyCenter)
-	lyricsLabel.SetMarginStart(20)
-	lyricsLabel.SetMarginEnd(20)
-	lyricsLabel.SetMarginTop(20)
-	lyricsLabel.SetMarginBottom(20)
-
-	scrollable := gtk.NewScrolledWindow()
-	scrollable.SetHExpand(true)
-	scrollable.SetVExpand(true)
-	scrollable.SetChild(lyricsLabel)
-	box.Append(scrollable)
-	return box
 }
