@@ -4,12 +4,10 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"path/filepath"
 	"slices"
-	"strings"
 	"sync"
+	"time"
 
-	"github.com/AvengeMedia/dankgo/lyrics"
 	"github.com/KotonBads/mosaic/player"
 	"github.com/charmbracelet/log"
 	"github.com/diamondburned/gotk4-adwaita/pkg/adw"
@@ -80,42 +78,37 @@ func App() {
 	library.Player = &player.Player{
 		Queue: library.Tracks,
 	}
+	p := library.Player
 
-	library.Player.SortAlphabetically()
-	library.Player.CurrentIdx = 0
+	p.SortAlphabetically()
+	p.CurrentIdx = 0
 
-	library.Player.MPV = &player.Client{}
-	err = library.Player.MPV.Init()
+	p.MPV = &player.Client{}
+	err = p.MPV.Init()
 	if err != nil {
 		logger.Error("Failed to init MPV client", "err", err)
 	}
+	p.MPV.OnTimePos = func(pos float64) {
+		p.UpdatePos(time.Duration(pos * float64(time.Second)))
+	}
 
-	library.Player.MPRIS = &player.MPRIS{}
-	library.Player.MPRIS.Init(library.Player)
+	p.MPRIS = &player.MPRIS{}
+	p.MPRIS.Init(p)
 
 	logger.Info("Prefetching lyrics")
 	go func() {
-		cache_dir, _ := os.UserCacheDir()
-		client := lyrics.New(lyrics.Options{
-			CacheDir: filepath.Join(cache_dir, "mosaic", "lyrics"),
-		})
+		client := GetLyricsClient()
 		var wg sync.WaitGroup
-		for _, track := range library.Player.Queue {
-			go func() {
-				wg.Add(1)
-				artists := make([]string, len(track.Artists))
-				for i, a := range track.Artists {
-					artists[i] = a.Name
-				}
-				request := lyrics.Request{
-					Title:    track.Title,
-					Artist:   strings.Join(artists, ", "),
-					Album:    track.Album.Title,
-					Duration: track.Duration,
-				}
+		sem := make(chan struct{}, 4)
+		for _, track := range p.Queue {
+			wg.Add(1)
+			go func(t player.Track) {
+				defer wg.Done()
+				sem <- struct{}{}
+				defer func() { <-sem }()
+				request := BuildLyricsRequest(t)
 				client.Lookup(context.TODO(), request)
-				wg.Done()
-			}()
+			}(track)
 		}
 		wg.Wait()
 		logger.Info("Lyrics prefetch complete")
@@ -124,6 +117,20 @@ func App() {
 	app := NewWindow(func(win *adw.ApplicationWindow) {
 		logger.Info("Building Libadwaita OverlaySplitView responsive layout")
 
+		root_overlay := gtk.NewOverlay()
+		root_overlay.SetHExpand(true)
+		root_overlay.SetVExpand(true)
+		root_overlay.SetOverflow(gtk.OverflowHidden)
+		root_overlay.AddCSSClass("ambient-overlay")
+
+		bg_picture := gtk.NewPicture()
+		bg_picture.SetCanShrink(true)
+		bg_picture.SetContentFit(gtk.ContentFitCover)
+		bg_picture.SetHExpand(true)
+		bg_picture.SetVExpand(true)
+		bg_picture.AddCSSClass("ambient-bg")
+		root_overlay.SetChild(bg_picture)
+
 		split_view := adw.NewOverlaySplitView()
 		split_view.SetHExpand(true)
 		split_view.SetVExpand(true)
@@ -131,78 +138,120 @@ func App() {
 		split_view.SetMaxSidebarWidth(450)
 		split_view.SetSidebarWidthFraction(0.35)
 
+		root_overlay.AddOverlay(split_view)
+
 		breakpoint := adw.NewBreakpoint(adw.BreakpointConditionParse("max-width: 630px"))
 		breakpoint.AddSetter(split_view, "collapsed", true)
 
+		showLyrics := false
+
 		player_refresh := func(track player.Track) {
-			library.Player.CurrentIdx = slices.IndexFunc(library.Player.Queue, func(found player.Track) bool {
-				if found.ID == track.ID {
-					return true
-				}
-				return false
+			p.ResetViewListeners()
+
+			p.CurrentIdx = slices.IndexFunc(p.Queue, func(found player.Track) bool {
+				return found.ID == track.ID
 			})
-			player_area := gtk.NewBox(gtk.OrientationVertical, 40)
+
+			ambientTex, err := GetBlurredAmbientArt(track)
+			if err == nil && ambientTex != nil {
+				bg_picture.SetPaintable(ambientTex)
+			}
+
+			player_area := gtk.NewBox(gtk.OrientationVertical, 22)
+			player_area.AddCSSClass("player-stage")
 			player_area.SetVAlign(gtk.AlignCenter)
+			player_area.SetHExpand(true)
+			player_area.SetVExpand(true)
 			player_area.SetMarginStart(24)
 			player_area.SetMarginEnd(24)
 			player_area.SetMarginTop(24)
 			player_area.SetMarginBottom(24)
 
-			flip_stack := gtk.NewStack()
-			flip_stack.SetTransitionType(gtk.StackTransitionTypeRotateLeftRight)
-			flip_stack.SetTransitionDuration(400)
-			flip_click := gtk.NewGestureClick()
-			flip_click.SetPropagationPhase(gtk.PhaseCapture)
-			flip_click.ConnectPressed(func(nPress int, x, y float64) {
-				if flip_stack.VisibleChildName() == "album-art" {
-					flip_stack.SetVisibleChildName("lyrics")
-				} else {
-					flip_stack.SetVisibleChildName("album-art")
-				}
-			})
-			flip_stack.AddController(flip_click)
+			stage_stack := gtk.NewStack()
+			stage_stack.SetTransitionType(gtk.StackTransitionTypeCrossfade)
+			stage_stack.SetTransitionDuration(280)
+			stage_stack.SetHhomogeneous(false)
+			stage_stack.SetVhomogeneous(true)
+			stage_stack.SetHAlign(gtk.AlignCenter)
+			stage_stack.SetVAlign(gtk.AlignCenter)
 
 			album_art := gtk.NewAspectFrame(0.5, 0.5, 1.0, false)
 			album_art.SetOverflow(gtk.OverflowHidden)
 			album_art.AddCSSClass("album-art")
-			album_art.SetSizeRequest(120, 120)
+			album_art.SetSizeRequest(320, 320)
+			album_art.SetCursorFromName("pointer")
+			album_art.SetTooltipText("Click to view synced lyrics")
 
 			picture, err := AlbumArt(track)
-			if err != nil {
-				return
+			if err == nil && picture != nil {
+				album_art.SetChild(picture)
 			}
-			album_art.SetChild(picture)
 
-			album_clamped := adw.NewClamp()
-			album_clamped.SetChild(album_art)
-			album_clamped.SetMaximumSize(320)
-			flip_stack.AddNamed(album_clamped, "album-art")
-			player_area.Append(flip_stack)
+			art_clamped := adw.NewClamp()
+			art_clamped.SetChild(album_art)
+			art_clamped.SetMaximumSize(320)
 
-			lyrics := Lyrics(library.Player)
+			art_click := gtk.NewGestureClick()
+			art_click.SetPropagationPhase(gtk.PhaseBubble)
+			art_click.ConnectReleased(func(nPress int, x, y float64) {
+				showLyrics = true
+				stage_stack.SetVisibleChildName("lyrics")
+			})
+			album_art.AddController(art_click)
+
+			stage_stack.AddNamed(art_clamped, "art")
+
+			lyricsWidget := Lyrics(p, func() {
+				showLyrics = false
+				stage_stack.SetVisibleChildName("art")
+			})
+
 			lyrics_clamped := adw.NewClamp()
-			lyrics_clamped.SetChild(lyrics)
-			lyrics_clamped.SetMaximumSize(320)
-			flip_stack.AddNamed(lyrics_clamped, "lyrics")
+			lyrics_clamped.SetChild(lyricsWidget)
+			lyrics_clamped.SetMaximumSize(440)
 
-			song_info := gtk.NewBox(gtk.OrientationVertical, 0)
+			stage_stack.AddNamed(lyrics_clamped, "lyrics")
+
+			if showLyrics {
+				stage_stack.SetVisibleChildName("lyrics")
+			} else {
+				stage_stack.SetVisibleChildName("art")
+			}
+
+			player_area.Append(stage_stack)
+
+			song_info := gtk.NewBox(gtk.OrientationVertical, 4)
+			song_info.AddCSSClass("song-info-box")
 			song_info.SetHExpand(true)
-			song_info.SetVExpand(true)
 			song_info.SetHAlign(gtk.AlignCenter)
+			song_info.SetMarginTop(4)
 
 			song_title := gtk.NewLabel(track.Title)
-			song_title.AddCSSClass("title-4")
+			song_title.AddCSSClass("track-title")
 			song_title.SetEllipsize(pango.EllipsizeEnd)
+			song_title.SetMaxWidthChars(36)
 			song_info.Append(song_title)
 
-			song_artist := gtk.NewLabel(track.Artists[0].Name)
-			song_artist.AddCSSClass("body")
-			song_artist.AddCSSClass("dim-label")
-			song_info.Append(song_artist)
+			artistName := join_artist_name(track.Artists)
+			if artistName != "" {
+				song_artist := gtk.NewLabel(artistName)
+				song_artist.AddCSSClass("track-artist")
+				song_artist.SetEllipsize(pango.EllipsizeEnd)
+				song_artist.SetMaxWidthChars(40)
+				song_info.Append(song_artist)
+			}
+
+			if track.Album.Title != "" && track.Album.Title != track.Title {
+				song_album := gtk.NewLabel(track.Album.Title)
+				song_album.AddCSSClass("track-album")
+				song_album.SetEllipsize(pango.EllipsizeEnd)
+				song_album.SetMaxWidthChars(42)
+				song_info.Append(song_album)
+			}
 
 			player_area.Append(song_info)
 
-			controls := PlayerControls(library.Player)
+			controls := PlayerControls(p)
 			controls_clamped := adw.NewClamp()
 			controls_clamped.SetChild(controls)
 			controls_clamped.SetMaximumSize(420)
@@ -212,28 +261,27 @@ func App() {
 		}
 
 		queue_refresh := func() {
-			queue := Queue(library.Player, func(track player.Track) {
-				library.Player.PlayTrack(library.Player.CurrentIdx)
-				player_refresh(track)
+			queue := Queue(p, func(track player.Track) {
+				p.PlayTrack(p.CurrentIdx)
 			})
 			split_view.SetSidebar(queue)
 		}
 
 		queue_refresh()
-		logger.Info("Setting player screen to song index: ", "index", library.Player.CurrentIdx)
-		player_refresh(library.Player.Queue[library.Player.CurrentIdx])
-		library.Player.SetVolume(20)
-		library.Player.Notify()
+		logger.Info("Setting player screen to song index: ", "index", p.CurrentIdx)
+		player_refresh(p.Queue[p.CurrentIdx])
+		p.SetVolume(20)
+		p.Notify()
 
-		library.Player.MPV.OnTrackEnd = func(reason string) {
+		p.MPV.OnTrackEnd = func(reason string) {
 			if reason == "stop" {
 				return
 			}
-			library.Player.Next()
+			p.Next()
 		}
-		library.Player.Subscribe(player.OnTrackChange, player_refresh)
+		p.Subscribe(player.OnTrackChange, player_refresh)
 
-		win.SetContent(split_view)
+		win.SetContent(root_overlay)
 		win.AddBreakpoint(breakpoint)
 	})
 
@@ -243,6 +291,6 @@ func App() {
 	} else {
 		logger.Info("Mosaic shutdown gracefully")
 	}
-	library.Player.MPV.Close()
+	p.MPV.Close()
 	os.Exit(exitCode)
 }

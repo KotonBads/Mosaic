@@ -43,12 +43,15 @@ func (m *MPRIS) Init(p *Player) {
 		if m.events != nil {
 			_ = m.events.Player.OnTitle()
 			_ = m.events.Player.OnPlayPause()
+			_ = m.events.Player.OnVolume()
+			_ = m.events.Player.OnPlayback()
 		}
 	})
 
 	p.Subscribe(ControlChange, func() {
 		if m.events != nil {
 			_ = m.events.Player.OnPlayPause()
+			_ = m.events.Player.OnVolume()
 		}
 	})
 }
@@ -75,6 +78,14 @@ func (m *MPRIS) PlayPause() error { m.player.PlayPause(); return nil }
 func (m *MPRIS) Stop() error      { m.player.Pause(); return nil }
 func (m *MPRIS) Next() error      { m.player.Next(); return nil }
 func (m *MPRIS) Previous() error  { m.player.Prev(); return nil }
+func (m *MPRIS) SetShuffle(t bool) error {
+	if t {
+		m.player.ShuffleQueue()
+	} else {
+		m.player.SortAlphabetically()
+	}
+	return nil
+}
 
 // Status & Metadata getters
 func (m *MPRIS) PlaybackStatus() (types.PlaybackStatus, error) {
@@ -126,10 +137,11 @@ func (m *MPRIS) SetPosition(string, types.Microseconds) error { return nil }
 func (m *MPRIS) OpenUri(string) error                         { return nil }
 func (m *MPRIS) Volume() (float64, error)                     { return float64(m.player.Volume) / 100, nil }
 func (m *MPRIS) SetVolume(v float64) error {
-	m.player.Volume = int(v * 100)
+	m.player.SetVolume(int(v * 100))
 	return nil
 }
 func (m *MPRIS) Rate() (float64, error)        { return 1.0, nil }
 func (m *MPRIS) SetRate(float64) error         { return nil }
 func (m *MPRIS) MinimumRate() (float64, error) { return 1.0, nil }
 func (m *MPRIS) MaximumRate() (float64, error) { return 1.0, nil }
+func (m *MPRIS) Shuffle() (bool, error)        { return m.player.Shuffle, nil }

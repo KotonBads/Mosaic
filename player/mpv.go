@@ -35,6 +35,8 @@ func (c *Client) Init() error {
 		"--input-default-bindings=no",
 		"--input-terminal=no",
 		"--terminal=no",
+		"--audio-format=float",
+		"--audio-client-name=Mosaic",
 		"--input-ipc-server="+c.socketPath,
 	)
 
@@ -92,12 +94,12 @@ func (c *Client) PlayFile(path string) error {
 
 func (c *Client) Play() error {
 	logger.Debug("Play")
-	return c.SendCommand("set-property", "pause", true)
+	return c.SendCommand("set_property", "pause", false)
 }
 
 func (c *Client) Pause() error {
 	logger.Debug("Pause")
-	return c.SendCommand("set-property", "pause", false)
+	return c.SendCommand("set_property", "pause", true)
 }
 
 func (c *Client) TogglePause() error {
